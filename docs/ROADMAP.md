@@ -34,8 +34,9 @@ The bar: `make setup → make dev → make reset → make check` is reliable, an
 
 In order; each step ends with something that runs and is tested.
 
-1. Keycloak: OIDC login on the web side, token verification and role middleware in Go,
-   security schemes in the spec, a Compose profile.
+1. [x] Keycloak: in-app sign-in with server-held sessions, token verification (with
+       audience) and role checks in Go, security schemes in the spec, per-user todos,
+       e2e sign-in tests (ADR 5).
 2. Temporal: a separate `cmd/worker`, an example workflow with retries and tests, endpoints to
    start a workflow and read its status, a Compose profile.
 3. Observability: OpenTelemetry traces across HTTP, Postgres, and Temporal (exporter off by

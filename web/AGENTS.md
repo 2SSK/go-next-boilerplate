@@ -55,6 +55,12 @@ components["schemas"]["Todo"]`). Server components call `serverApi.GET(...)`; cl
   components call `api.POST(...)` and friends with same-origin paths, which `next.config.ts`
   forwards to `API_URL`. Wrap calls in `unwrap()` to get the data or a thrown `ApiError`. Never
   hard-code the API host. An endpoint that doesn't exist in the spec is a type error.
+- **Auth.** Tokens never reach client code. The server holds them (`lib/auth/session.ts`);
+  client components call the API through `api` (which goes via `app/api/[...path]`), server
+  components through `serverApi()`. Forms that change auth state use Server Actions (Next.js
+  checks their Origin). To require sign-in for a page, add it to `protectedPaths` in
+  `config/site.ts`. Never put a token, or anything derived from one beyond display fields,
+  into props passed to a client component.
 - **Errors.** `unwrap()` throws `ApiError` with the server's message, status, and `code` (the
   contract's machine-readable reason). Branch on `code`, show `message` in the UI
   (`role="alert"`), and never swallow it.
@@ -165,14 +171,14 @@ The app must feel instant. Four things make it so; every rule below protects one
 Measured on a production build (`npm run build && npx next start`); dev mode compiles routes on
 first visit and is no guide to speed.
 
-| Measure                                      | Budget                     | Measured |
-| -------------------------------------------- | -------------------------- | -------- |
-| Click to new page (URL, title, content)      | under 50ms once prefetched | 6–13ms   |
-| Time with no tab title during navigation     | 0 frames                   | 0        |
-| Static page from the server (`/`)            | under 20ms                 | 8ms      |
-| Streamed page with data (`/todos`, complete) | under 100ms on a local API | ~46ms    |
-| Horizontal shift between pages               | 0px                        | 0px      |
-| JavaScript for a full visit (transferred)    | under 200KB                | 164KB    |
+| Measure                                      | Budget                                                        | Measured    |
+| -------------------------------------------- | ------------------------------------------------------------- | ----------- |
+| Click to new page (URL, title, content)      | under 50ms once prefetched                                    | 6–13ms      |
+| Time with no tab title during navigation     | 0 on static pages; under 100ms on pages that read the session | 0 / 30–45ms |
+| Static page from the server (`/`)            | under 20ms                                                    | 8ms         |
+| Streamed page with data (`/todos`, complete) | under 100ms on a local API                                    | ~46ms       |
+| Horizontal shift between pages               | 0px                                                           | 0px         |
+| JavaScript for a full visit (transferred)    | under 200KB                                                   | 164KB       |
 
 Before finishing a change that touches pages, layouts, or data loading:
 

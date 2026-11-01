@@ -93,6 +93,12 @@ Run everything through the Makefile; `make` lists the targets.
   request bodies or credentials; keys containing password, secret, token, authorization,
   cookie, or api_key are redacted anyway, but don't rely on that. `debug` is for detail you'd
   only want while investigating; `LOG_LEVEL` turns it on without a rebuild.
+- **Auth.** Which operations need which role lives in the spec
+  (`security: [{ bearerAuth: [role] }]`); `internal/auth` enforces it from the generated
+  `api.BearerAuthScopes`. Handlers never read the `Authorization` header: they call
+  `auth.PrincipalFrom(ctx)`. Anything a user owns is scoped by `Principal.Subject` in the
+  store, and someone else's resource is a 404, never a 403. Keycloak's realm is
+  `deploy/keycloak/realm-app.json`; change roles and clients there, not by hand in the console.
 - **Security headers.** `middleware.SecurityHeaders` covers every API response. A handler that
   serves HTML sets its own Content-Security-Policy, allowing inline scripts by hash only (see
   `internal/docs`). Loosening the web policy in `next.config.ts` needs a stated reason.

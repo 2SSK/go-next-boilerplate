@@ -122,23 +122,51 @@ example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same val
 `make test` proves it with exactly such a password. A variable already set in your shell wins
 over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
 
-| Variable                             | Default                                               | Used by      |
-| ------------------------------------ | ----------------------------------------------------- | ------------ |
-| `APP_ENV`                            | `development` (text logs) or `production` (JSON)      | API          |
-| `LOG_LEVEL`                          | `info` in production, `debug` otherwise               | API          |
-| `DOCS_ENABLED`                       | `true`; `false` turns off `/docs` and `/openapi.yaml` | API          |
-| `PORT`                               | `8080`                                                | API          |
-| `SHUTDOWN_TIMEOUT`                   | `10s`, the drain time after SIGTERM                   | API          |
-| `PGHOST`, `PGPORT`                   | `localhost`, `5432` (also the host port in Compose)   | API, Compose |
-| `PGUSER`, `PGPASSWORD`, `PGDATABASE` | `app` / `app` / `app`                                 | API, Compose |
-| `PGSSLMODE`                          | `disable`                                             | API          |
-| `DATABASE_URL`                       | unset; when set, it wins over the `PG*` values        | API          |
-| `API_URL`                            | `http://localhost:8080`                               | Web          |
-| `WEB_PORT`                           | `3000`                                                | Web          |
+| Variable                                              | Default                                               | Used by      |
+| ----------------------------------------------------- | ----------------------------------------------------- | ------------ |
+| `APP_ENV`                                             | `development` (text logs) or `production` (JSON)      | API          |
+| `LOG_LEVEL`                                           | `info` in production, `debug` otherwise               | API          |
+| `DOCS_ENABLED`                                        | `true`; `false` turns off `/docs` and `/openapi.yaml` | API          |
+| `PORT`                                                | `8080`                                                | API          |
+| `SHUTDOWN_TIMEOUT`                                    | `10s`, the drain time after SIGTERM                   | API          |
+| `PGHOST`, `PGPORT`                                    | `localhost`, `5432` (also the host port in Compose)   | API, Compose |
+| `PGUSER`, `PGPASSWORD`, `PGDATABASE`                  | `app` / `app` / `app`                                 | API, Compose |
+| `PGSSLMODE`                                           | `disable`                                             | API          |
+| `DATABASE_URL`                                        | unset; when set, it wins over the `PG*` values        | API          |
+| `KEYCLOAK_PORT`                                       | `8180`                                                | Compose      |
+| `OIDC_ISSUER`, `OIDC_AUDIENCE`                        | `http://localhost:8180/realms/app`, `api`             | API          |
+| `OIDC_DISCOVERY_URL`                                  | unset; Keycloak's internal address in Docker          | API          |
+| `APP_URL`                                             | `http://localhost:3000`, this app's public URL        | Web          |
+| `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | the dev realm's values                                | Web          |
+| `AUTH_SECRET`                                         | required in production: 32+ random characters         | Web          |
+| `AUTH_INTERNAL_ISSUER`                                | unset; Keycloak's internal address in Docker          | Web          |
+| `API_URL`                                             | `http://localhost:8080`                               | Web          |
+| `WEB_PORT`                                            | `3000`                                                | Web          |
 
 The database credentials are the standard libpq variables, written once: the API builds its
 connection from them (escaping any character correctly), Compose creates the database with them,
 and psql reads them as-is. If port 5432 is taken, change `PGPORT` and nothing else.
+
+## Authentication (platform)
+
+Users, passwords, and roles live in Keycloak (`make kc-up`, console at
+http://localhost:8180, `admin`/`admin`). Dev users: `alice`/`alice` (role `user`) and
+`admin`/`admin` (`user` and `admin`). New users get `user` automatically.
+
+- **Sign-in happens on the app's own page** (`/login`). The Next.js server exchanges the
+  username and password with Keycloak and keeps the tokens in an encrypted, `httpOnly`
+  cookie; browser JavaScript never sees a token. `proxy.ts` refreshes tokens before they
+  expire and sends signed-out visitors of protected pages to `/login`.
+- **The browser calls the API through `/api/*`**, a Next.js route that attaches the token
+  on the server and refuses cross-site writes. Server components use `serverApi()`.
+- **The API checks every token** (signature, issuer, expiry, and that it was issued for
+  this API) and enforces the roles each operation declares in the spec:
+  `security: [{ bearerAuth: [user] }]`. Missing or bad token: 401; missing role: 403.
+- **Todos are per user.** Another user's todo is a 404, so its existence isn't revealed.
+- **To protect a page**, add its path to `protectedPaths` in `web/config/site.ts`.
+
+The tradeoff of an in-app sign-in form (no Keycloak MFA, password reset, or social login)
+and how to switch back to Keycloak's own pages are in `docs/adr/0005`.
 
 ## Migrations
 
