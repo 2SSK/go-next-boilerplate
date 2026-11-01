@@ -42,13 +42,14 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // Memoizes components and hooks at build time; no hand-written useMemo/useCallback.
   reactCompiler: true,
-  // The browser only talks to Next.js for the app; these forward to the Go API.
-  // The API's docs (/docs, /openapi.yaml) are served by the API itself, not proxied.
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Health checks go straight to the Go API. /api/* is a route handler instead
+  // (app/api/[...path]/route.ts), because it attaches the session's token. The
+  // API's docs (/docs, /openapi.yaml) are served by the API itself, not proxied.
   async rewrites() {
-    return ["/api/:path*", "/readyz", "/livez"].map((source) => ({
+    return ["/readyz", "/livez"].map((source) => ({
       source,
       destination: `${API_URL}${source}`,
     }));

@@ -1,9 +1,10 @@
 /**
  * Typed client for the Go API, generated from api/openapi.yaml (`make generate`).
  *
- * In the browser, `api` calls same-origin paths ("/api/...", "/readyz") and
- * next.config.ts forwards them to API_URL, so there is no CORS and no API host in
- * client code. Server components use `serverApi` from lib/api-server.ts instead.
+ * In the browser, `api` calls same-origin paths: /api/* goes through
+ * app/api/[...path]/route.ts, which attaches the session's access token on the
+ * server, so browsers never hold one. Server components use `serverApi()` from
+ * lib/api-server.ts instead.
  */
 import createClient from "openapi-fetch";
 import type { components, paths } from "./api/schema";
@@ -42,6 +43,9 @@ export async function unwrap<D>(
 
 /** A message fit to show people: the API's own message, or a hint that it is down. */
 export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === "unauthorized") {
+    return "Your session has ended. Reload the page to sign in again.";
+  }
   if (err instanceof ApiError) return err.message;
   return "Could not reach the API. Is it running?";
 }

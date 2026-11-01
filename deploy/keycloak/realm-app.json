@@ -34,26 +34,16 @@
   "clients": [
     {
       "clientId": "web",
-      "name": "Web app (Next.js server)",
+      "name": "Web app (Next.js server, signs users in with the app's own form)",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
       "secret": "dev-web-secret",
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": [
-        "http://localhost:3000/*",
-        "http://localhost:3190/*"
-      ],
-      "webOrigins": [
-        "+"
-      ],
-      "attributes": {
-        "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:3190/*"
-      },
+      "attributes": {},
       "protocolMappers": [
         {
           "name": "api audience",
@@ -130,5 +120,12 @@
         "admin"
       ]
     }
-  ]
+  ],
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60
 }

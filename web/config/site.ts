@@ -23,6 +23,11 @@ export interface NavItem {
   readonly href: string;
 }
 
+/** Pages that need a signed-in user; proxy.ts sends anyone else to the login. */
+export const protectedPaths: readonly string[] = [
+  "/todos", // feature:todo
+];
+
 export const navigation: readonly NavItem[] = [
   { name: "Home", href: "/" },
   // feature:todo:begin

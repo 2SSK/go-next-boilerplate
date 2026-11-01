@@ -42,7 +42,7 @@ async function Todos() {
 /** Fetch only; a failed load becomes an inline error, not a broken page. */
 async function loadTodos(): Promise<{ todos: Todo[]; error?: string }> {
   try {
-    return { todos: await unwrap(serverApi.GET("/api/v1/todos")) };
+    return { todos: await unwrap((await serverApi()).GET("/api/v1/todos")) };
   } catch (err) {
     return { todos: [], error: errorMessage(err) };
   }

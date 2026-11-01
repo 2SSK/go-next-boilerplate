@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Terminal } from "lucide-react";
+import { Suspense } from "react";
 import { site } from "@/config/site";
 import { NavLinks } from "./nav-links";
 import { ThemeToggle } from "./theme-toggle";
+import { UserMenu, UserMenuPlaceholder } from "./user-menu";
 
 /**
  * The top navigation, in the style set by `site.navbar`. A server component rendered from
@@ -23,6 +25,9 @@ function IslandNav() {
       >
         <NavLinks variant="island" />
         <span className="bg-border mx-0.5 h-4 w-px" aria-hidden="true" />
+        <Suspense fallback={<UserMenuPlaceholder />}>
+          <UserMenu />
+        </Suspense>
         <ThemeToggle />
       </nav>
     </header>
@@ -44,6 +49,9 @@ function BarNav() {
         <nav aria-label="Main" className="flex items-center gap-1">
           <NavLinks variant="bar" />
           <span className="bg-border mx-1 h-4 w-px" aria-hidden="true" />
+          <Suspense fallback={<UserMenuPlaceholder />}>
+            <UserMenu />
+          </Suspense>
           <ThemeToggle />
         </nav>
       </div>
