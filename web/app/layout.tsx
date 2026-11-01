@@ -23,6 +23,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${inter.variable} ${jetBrainsMono.variable}`}
+      data-navbar={site.navbar}
       suppressHydrationWarning
     >
       <body className="flex min-h-dvh flex-col">

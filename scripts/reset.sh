@@ -45,6 +45,9 @@ for f in "${marked[@]}"; do
   echo "  unwired  ${f#./}"
 done
 
+# Next.js caches generated route types for pages that no longer exist
+rm -rf web/.next
+
 gofmt -w cmd internal
 go mod tidy
 go build ./...

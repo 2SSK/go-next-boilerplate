@@ -23,7 +23,7 @@ const STACK = ["Go net/http", "pgx", "Postgres", "Next.js", "shadcn/ui", "Tailwi
 
 export default function Home() {
   return (
-    <main className="container-page pt-32 sm:pt-40">
+    <main className="container-page page-top">
       <div className="animate-rise" style={rise(0)}>
         <ApiStatus />
       </div>

@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Todos" };
 
 export default function TodosPage() {
   return (
-    <main className="container-page pt-32 sm:pt-40">
+    <main className="container-page page-top">
       <p className="label animate-rise">Demo</p>
       <h1
         className="animate-rise mt-2 text-[32px] tracking-[-0.02em]"

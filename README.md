@@ -64,7 +64,7 @@ internal/
 web/
   app/                pages (landing, todos) and globals.css (the design tokens)
   components/         navbar, theme toggle, API status, ui/ (shadcn)
-  config/site.ts      app name, description, and navigation
+  config/site.ts      app name, description, navbar style, and navigation
   lib/api.ts          fetch helper for the Go API
 scripts/              reset.sh and rename.sh, run through make
 ```
@@ -124,7 +124,13 @@ three motion speeds on a single easing curve. Light mode is neutral paper with T
 accents; dark mode is Tokyo Night. Every token is a CSS variable in `web/app/globals.css`, and the
 shadcn components read the same variables, so changing a colour there restyles everything.
 
-Helper classes: `container-page` (page column), `surface` (raised card), `label` (small caps
+The navbar comes in two styles, set by `navbar` in `web/config/site.ts`. `"bar"` (the default) is
+a full-width sticky bar for platform and infra tools. `"island"` is a floating capsule for
+products and landing pages. Page spacing follows the choice automatically.
+
+The full design system (tokens, type scale, motion, component rules) is in `web/AGENTS.md`.
+
+Helper classes: `container-page` (page column), `page-top` (space below the navbar), `surface` (raised card), `label` (small caps
 heading), `meta` (mono data text), `interactive` (shared transition), `animate-rise`
 (entrance; stagger it with `animationDelay`).
 

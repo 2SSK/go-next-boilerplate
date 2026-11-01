@@ -154,6 +154,17 @@
     @apply mx-auto w-full max-w-3xl px-5 sm:px-6;
   }
 
+  /*
+   * Space above a page's first block. The floating island overlaps the page, so it needs
+   * more; the sticky bar already takes its own height in the flow.
+   */
+  .page-top {
+    @apply pt-12 sm:pt-16;
+  }
+  [data-navbar="island"] .page-top {
+    @apply pt-32 sm:pt-40;
+  }
+
   /* Small uppercase section label */
   .label {
     @apply text-subtle text-xs font-semibold tracking-[0.08em] uppercase;
