@@ -43,7 +43,7 @@ jobs:
           version: latest
       - name: test (unit + integration)
         run: go test -race -tags integration -coverpkg=./internal/... -coverprofile=coverage.out ./...
-      - run: go build ./cmd/api
+      - run: go build ./...
       - name: .env reaches every reader unchanged
         run: ./scripts/test-env.sh
 
