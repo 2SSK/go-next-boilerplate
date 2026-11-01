@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/2SSK/boilerplate/internal/httpx"
+	"github.com/2SSK/go-next-boilerplate/internal/httpx"
 )
 
 // Pinger reports whether a dependency is reachable. *pgxpool.Pool satisfies it.

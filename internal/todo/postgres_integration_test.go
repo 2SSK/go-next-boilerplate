@@ -10,8 +10,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/2SSK/boilerplate/internal/database"
-	"github.com/2SSK/boilerplate/internal/todo"
+	"github.com/2SSK/go-next-boilerplate/internal/database"
+	"github.com/2SSK/go-next-boilerplate/internal/todo"
 )
 
 // Runs against DATABASE_URL (make db-up first): go test -tags integration ./...

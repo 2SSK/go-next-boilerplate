@@ -1,5 +1,5 @@
 # Local stack. `make db-up` starts only Postgres; `make up` builds everything.
-name: boilerplate
+name: go-next-boilerplate
 
 services:
   db:

@@ -12,7 +12,7 @@ export const site: {
   readonly repo: string;
   readonly navbar: NavbarStyle;
 } = {
-  name: "Boilerplate",
+  name: "Go Next Boilerplate",
   description: "A Go API and a Next.js frontend, wired together and ready to build on.",
   repo: "https://github.com/2SSK/go-next-boilerplate",
   navbar: "bar",

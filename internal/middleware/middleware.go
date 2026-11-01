@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/2SSK/boilerplate/internal/httpx"
+	"github.com/2SSK/go-next-boilerplate/internal/httpx"
 )
 
 // Middleware wraps a handler with extra behavior.

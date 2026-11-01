@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2SSK/boilerplate/internal/middleware"
+	"github.com/2SSK/go-next-boilerplate/internal/middleware"
 )
 
 func TestRoutes(t *testing.T) {

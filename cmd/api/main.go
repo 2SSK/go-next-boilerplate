@@ -11,10 +11,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/2SSK/boilerplate/internal/config"
-	"github.com/2SSK/boilerplate/internal/database"
-	"github.com/2SSK/boilerplate/internal/logger"
-	"github.com/2SSK/boilerplate/internal/server"
+	"github.com/2SSK/go-next-boilerplate/internal/config"
+	"github.com/2SSK/go-next-boilerplate/internal/database"
+	"github.com/2SSK/go-next-boilerplate/internal/logger"
+	"github.com/2SSK/go-next-boilerplate/internal/server"
 )
 
 func main() {

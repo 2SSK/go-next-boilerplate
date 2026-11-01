@@ -1,4 +1,4 @@
-module github.com/2SSK/boilerplate
+module github.com/2SSK/go-next-boilerplate
 
 go 1.25.0
 

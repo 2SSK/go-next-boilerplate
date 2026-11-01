@@ -24,6 +24,12 @@ sed -i -E "s/^name: .*/name: $NAME/" docker-compose.yml
 sed -i "s|- ${OLD_MODULE}\$|- ${MODULE}|" .golangci.yml
 sed -i -E "0,/name: \".*\",/s//name: \"$TITLE\",/" web/config/site.ts
 (cd web && npm pkg set name="$NAME-web")
+# The lockfile records the package name twice; set it directly (no network, no re-resolve)
+node -e '
+  const fs = require("fs"), f = "web/package-lock.json", lock = JSON.parse(fs.readFileSync(f));
+  lock.name = lock.packages[""].name = process.argv[1];
+  fs.writeFileSync(f, JSON.stringify(lock, null, 2) + "\n");
+' "$NAME-web"
 
 gofmt -w cmd internal
 go build ./...

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/2SSK/boilerplate/internal/httpx"
+	"github.com/2SSK/go-next-boilerplate/internal/httpx"
 )
 
 // Handler serves the todo HTTP endpoints.

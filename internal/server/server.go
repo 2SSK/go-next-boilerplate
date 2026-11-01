@@ -9,13 +9,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/2SSK/boilerplate/internal/httpx"
-	"github.com/2SSK/boilerplate/internal/middleware"
-	"github.com/2SSK/boilerplate/internal/todo" // feature:todo
+	"github.com/2SSK/go-next-boilerplate/internal/httpx"
+	"github.com/2SSK/go-next-boilerplate/internal/middleware"
+	"github.com/2SSK/go-next-boilerplate/internal/todo" // feature:todo
 )
 
 // AppName is reported by GET /.
-const AppName = "boilerplate"
+const AppName = "go-next-boilerplate"
 
 // Deps are the shared dependencies handlers are built from.
 type Deps struct {

@@ -27,4 +27,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/2SSK/boilerplate
+        - github.com/2SSK/go-next-boilerplate
