@@ -109,7 +109,7 @@ export interface components {
                  * @description Stable, machine-readable. Branch on this, not on the message.
                  * @enum {string}
                  */
-                code: "bad_request" | "not_found" | "validation_failed" | "internal" | "unavailable";
+                code: "bad_request" | "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "internal" | "unavailable";
                 /** @description Human-readable, safe to show to people. */
                 message: string;
             };
@@ -156,6 +156,24 @@ export interface components {
         };
     };
     responses: {
+        /** @description Missing, invalid, or expired access token */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Valid token, but the caller lacks a required role */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Malformed request (bad JSON, wrong types, invalid path value) */
         BadRequest: {
             headers: {
@@ -287,6 +305,8 @@ export interface operations {
                     "application/json": components["schemas"]["Todo"][];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             500: components["responses"]["Internal"];
         };
     };
@@ -313,6 +333,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             500: components["responses"]["Internal"];
         };
@@ -336,6 +358,8 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
         };
@@ -365,6 +389,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             500: components["responses"]["Internal"];

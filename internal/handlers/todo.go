@@ -5,16 +5,30 @@ import (
 	"errors"
 
 	"github.com/2SSK/go-next-boilerplate/api"
+	"github.com/2SSK/go-next-boilerplate/internal/auth"
 	"github.com/2SSK/go-next-boilerplate/internal/models"
 )
 
 // TodoStore is the storage TodoHandler needs; store.Todos implements it and
-// tests use an in-memory fake.
+// tests use an in-memory fake. Every call is scoped to one owner.
 type TodoStore interface {
-	List(ctx context.Context) ([]models.Todo, error)
-	Create(ctx context.Context, title string) (models.Todo, error)
-	Update(ctx context.Context, id int64, p models.TodoPatch) (models.Todo, error)
-	Delete(ctx context.Context, id int64) error
+	List(ctx context.Context, owner string) ([]models.Todo, error)
+	Create(ctx context.Context, owner, title string) (models.Todo, error)
+	Update(ctx context.Context, owner string, id int64, p models.TodoPatch) (models.Todo, error)
+	Delete(ctx context.Context, owner string, id int64) error
+}
+
+// errNoPrincipal means a todo operation ran without auth.Middleware, which the
+// spec's security requirement guarantees; it surfaces as a 500, never as data.
+var errNoPrincipal = errors.New("todo operation reached without an authenticated caller")
+
+// owner is the caller's stable user ID.
+func owner(ctx context.Context) (string, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p.Subject == "" {
+		return "", errNoPrincipal
+	}
+	return p.Subject, nil
 }
 
 // TodoHandler implements the todo operations.
@@ -29,7 +43,11 @@ func NewTodoHandler(store TodoStore) *TodoHandler {
 
 // ListTodos implements GET /api/v1/todos.
 func (h *TodoHandler) ListTodos(ctx context.Context, _ api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
-	todos, err := h.store.List(ctx)
+	who, err := owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	todos, err := h.store.List(ctx, who)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +64,11 @@ func (h *TodoHandler) CreateTodo(ctx context.Context, req api.CreateTodoRequestO
 	if err != nil {
 		return api.CreateTodo422JSONResponse{ValidationFailedJSONResponse: api.NewValidationFailed(err.Error())}, nil
 	}
-	t, err := h.store.Create(ctx, title)
+	who, err := owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := h.store.Create(ctx, who, title)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +92,11 @@ func (h *TodoHandler) UpdateTodo(ctx context.Context, req api.UpdateTodoRequestO
 		p.Title = &title
 	}
 
-	t, err := h.store.Update(ctx, req.Id, p)
+	who, err := owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := h.store.Update(ctx, who, req.Id, p)
 	if errors.Is(err, models.ErrNotFound) {
 		return api.UpdateTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
 	}
@@ -85,7 +111,11 @@ func (h *TodoHandler) DeleteTodo(ctx context.Context, req api.DeleteTodoRequestO
 	if req.Id < 1 {
 		return api.DeleteTodo400JSONResponse{BadRequestJSONResponse: api.NewBadRequest("id must be a positive integer")}, nil
 	}
-	err := h.store.Delete(ctx, req.Id)
+	who, err := owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = h.store.Delete(ctx, who, req.Id)
 	if errors.Is(err, models.ErrNotFound) {
 		return api.DeleteTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
 	}

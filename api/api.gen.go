@@ -16,11 +16,17 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+const (
+	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
+)
+
 // Defines values for ErrorErrorCode.
 const (
 	ErrorErrorCodeBadRequest       ErrorErrorCode = "bad_request"
+	ErrorErrorCodeForbidden        ErrorErrorCode = "forbidden"
 	ErrorErrorCodeInternal         ErrorErrorCode = "internal"
 	ErrorErrorCodeNotFound         ErrorErrorCode = "not_found"
+	ErrorErrorCodeUnauthorized     ErrorErrorCode = "unauthorized"
 	ErrorErrorCodeUnavailable      ErrorErrorCode = "unavailable"
 	ErrorErrorCodeValidationFailed ErrorErrorCode = "validation_failed"
 )
@@ -30,9 +36,13 @@ func (e ErrorErrorCode) Valid() bool {
 	switch e {
 	case ErrorErrorCodeBadRequest:
 		return true
+	case ErrorErrorCodeForbidden:
+		return true
 	case ErrorErrorCodeInternal:
 		return true
 	case ErrorErrorCodeNotFound:
+		return true
+	case ErrorErrorCodeUnauthorized:
 		return true
 	case ErrorErrorCodeUnavailable:
 		return true
@@ -166,14 +176,23 @@ type TodoPatch struct {
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
+// Forbidden defines model for Forbidden.
+type Forbidden = Error
+
 // Internal defines model for Internal.
 type Internal = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = Error
+
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
+
+// bearerAuthContextKey is the context key for bearerAuth security scheme
+type bearerAuthContextKey string
 
 // CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
 type CreateTodoJSONRequestBody = NewTodo
@@ -232,6 +251,12 @@ func (siw *ServerInterfaceWrapper) GetRoot(w http.ResponseWriter, r *http.Reques
 // ListTodos operation middleware
 func (siw *ServerInterfaceWrapper) ListTodos(w http.ResponseWriter, r *http.Request) {
 
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"user"})
+
+	r = r.WithContext(ctx)
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListTodos(w, r)
 	}))
@@ -245,6 +270,12 @@ func (siw *ServerInterfaceWrapper) ListTodos(w http.ResponseWriter, r *http.Requ
 
 // CreateTodo operation middleware
 func (siw *ServerInterfaceWrapper) CreateTodo(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"user"})
+
+	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateTodo(w, r)
@@ -272,6 +303,12 @@ func (siw *ServerInterfaceWrapper) DeleteTodo(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"user"})
+
+	r = r.WithContext(ctx)
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteTodo(w, r, id)
 	}))
@@ -297,6 +334,12 @@ func (siw *ServerInterfaceWrapper) UpdateTodo(w http.ResponseWriter, r *http.Req
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
 		return
 	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{"user"})
+
+	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateTodo(w, r, id)
@@ -470,9 +513,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type BadRequestJSONResponse Error
 
+type ForbiddenJSONResponse Error
+
 type InternalJSONResponse Error
 
 type NotFoundJSONResponse Error
+
+type UnauthorizedJSONResponse Error
 
 type ValidationFailedJSONResponse Error
 
@@ -514,6 +561,34 @@ func (response ListTodos200JSONResponse) VisitListTodosResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListTodos401JSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListTodos403JSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -564,6 +639,34 @@ func (response CreateTodo400JSONResponse) VisitCreateTodoResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateTodo401JSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateTodo403JSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -622,6 +725,34 @@ func (response DeleteTodo400JSONResponse) VisitDeleteTodoResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteTodo401JSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteTodo403JSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -687,6 +818,34 @@ func (response UpdateTodo400JSONResponse) VisitUpdateTodoResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateTodo401JSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateTodo403JSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

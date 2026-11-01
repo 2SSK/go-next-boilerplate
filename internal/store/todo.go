@@ -23,9 +23,13 @@ func NewTodos(db *pgxpool.Pool) *Todos {
 
 const todoColumns = `id, title, completed, created_at, updated_at`
 
-// List returns every todo, newest first.
-func (s *Todos) List(ctx context.Context) ([]models.Todo, error) {
-	rows, err := s.db.Query(ctx, `SELECT `+todoColumns+` FROM todos ORDER BY created_at DESC, id DESC`)
+// Every method takes the owner and filters by it: a todo that belongs to
+// someone else behaves exactly like one that doesn't exist.
+
+// List returns owner's todos, newest first.
+func (s *Todos) List(ctx context.Context, owner string) ([]models.Todo, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT `+todoColumns+` FROM todos WHERE owner_id = $1 ORDER BY created_at DESC, id DESC`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("list todos: %w", err)
 	}
@@ -36,9 +40,10 @@ func (s *Todos) List(ctx context.Context) ([]models.Todo, error) {
 	return todos, nil
 }
 
-// Create inserts a todo and returns it with its generated fields.
-func (s *Todos) Create(ctx context.Context, title string) (models.Todo, error) {
-	rows, _ := s.db.Query(ctx, `INSERT INTO todos (title) VALUES ($1) RETURNING `+todoColumns, title)
+// Create inserts a todo for owner and returns it with its generated fields.
+func (s *Todos) Create(ctx context.Context, owner, title string) (models.Todo, error) {
+	rows, _ := s.db.Query(ctx,
+		`INSERT INTO todos (owner_id, title) VALUES ($1, $2) RETURNING `+todoColumns, owner, title)
 	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[models.Todo])
 	if err != nil {
 		return models.Todo{}, fmt.Errorf("create todo: %w", err)
@@ -48,12 +53,12 @@ func (s *Todos) Create(ctx context.Context, title string) (models.Todo, error) {
 
 // Update applies the non-nil fields of p. COALESCE keeps the current value
 // for fields the patch leaves out.
-func (s *Todos) Update(ctx context.Context, id int64, p models.TodoPatch) (models.Todo, error) {
+func (s *Todos) Update(ctx context.Context, owner string, id int64, p models.TodoPatch) (models.Todo, error) {
 	rows, _ := s.db.Query(ctx, `
 		UPDATE todos
 		SET title = COALESCE($2, title), completed = COALESCE($3, completed)
-		WHERE id = $1
-		RETURNING `+todoColumns, id, p.Title, p.Completed)
+		WHERE id = $1 AND owner_id = $4
+		RETURNING `+todoColumns, id, p.Title, p.Completed, owner)
 	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[models.Todo])
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.Todo{}, models.ErrNotFound
@@ -65,8 +70,8 @@ func (s *Todos) Update(ctx context.Context, id int64, p models.TodoPatch) (model
 }
 
 // Delete removes a todo.
-func (s *Todos) Delete(ctx context.Context, id int64) error {
-	tag, err := s.db.Exec(ctx, `DELETE FROM todos WHERE id = $1`, id)
+func (s *Todos) Delete(ctx context.Context, owner string, id int64) error {
+	tag, err := s.db.Exec(ctx, `DELETE FROM todos WHERE id = $1 AND owner_id = $2`, id, owner)
 	if err != nil {
 		return fmt.Errorf("delete todo %d: %w", id, err)
 	}

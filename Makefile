@@ -9,7 +9,7 @@ COMPOSE ?= docker compose
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev dev-api dev-web db-up db-migrate db-status db-down db-reset db-shell \
+.PHONY: help setup dev dev-api dev-web db-up kc-up db-migrate db-status db-down db-reset db-shell \
         test test-integration cover lint fmt generate generate-check build up down e2e check reset rename clean
 
 ## help: list targets
@@ -22,8 +22,8 @@ setup:
 	go mod download
 	cd web && npm ci
 
-## dev: run Postgres, apply migrations, then the API and web app together (Ctrl-C stops all)
-dev: db-up db-migrate
+## dev: run Postgres and Keycloak, apply migrations, then the API and web app (Ctrl-C stops all)
+dev: db-up kc-up db-migrate
 	@trap 'kill 0' INT TERM EXIT; \
 	$(MAKE) --no-print-directory dev-api & \
 	$(MAKE) --no-print-directory dev-web & \
@@ -40,6 +40,10 @@ dev-web:
 ## db-up: start Postgres and wait until it is healthy
 db-up:
 	$(COMPOSE) up -d --wait db
+
+## kc-up: start Keycloak (http://localhost:8180, admin/admin) and wait until it is ready
+kc-up:
+	$(COMPOSE) up -d --wait keycloak
 
 ## db-migrate: apply pending migrations (the API never does this itself)
 db-migrate:

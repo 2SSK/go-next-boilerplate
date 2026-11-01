@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/2SSK/go-next-boilerplate/internal/auth"
 	"github.com/2SSK/go-next-boilerplate/internal/config"
 	"github.com/2SSK/go-next-boilerplate/internal/database"
 	"github.com/2SSK/go-next-boilerplate/internal/logger"
@@ -81,7 +82,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("%w; run `make db-migrate` (or `api migrate`) first", err)
 	}
 
-	srv := router.New(cfg.Port, router.Routes(router.Deps{Log: log, DB: db, DocsEnabled: cfg.DocsEnabled}))
+	srv := router.New(cfg.Port, router.Routes(router.Deps{
+		Log:         log,
+		DB:          db,
+		DocsEnabled: cfg.DocsEnabled,
+		// Contacts the provider on first use, so the API can start before it.
+		Auth: auth.NewVerifier(auth.Config{
+			Issuer:       cfg.OIDC.Issuer,
+			DiscoveryURL: cfg.OIDC.DiscoveryURL,
+			Audience:     cfg.OIDC.Audience,
+		}),
+	}))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -129,7 +140,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger, args []st
 
 	applied, err := database.Migrate(ctx, db, database.Migrations())
 	for _, m := range applied {
-		log.Info("applied migration", "version", m.Version)
+		log.Info("applied migration", "migration", m.Version)
 	}
 	if err != nil {
 		return err

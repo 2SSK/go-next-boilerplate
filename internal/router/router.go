@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/2SSK/go-next-boilerplate/api"
+	"github.com/2SSK/go-next-boilerplate/internal/auth"
 	"github.com/2SSK/go-next-boilerplate/internal/docs"
 	"github.com/2SSK/go-next-boilerplate/internal/handlers"
 	"github.com/2SSK/go-next-boilerplate/internal/httpx"
@@ -31,6 +32,8 @@ type Deps struct {
 	DB  *pgxpool.Pool
 	// DocsEnabled mounts /docs and /openapi.yaml.
 	DocsEnabled bool
+	// Auth verifies access tokens for operations the spec secures.
+	Auth auth.TokenVerifier
 }
 
 // Routes returns the full handler. Every route is defined in api/openapi.yaml;
@@ -56,6 +59,9 @@ func Routes(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	api.HandlerWithOptions(strict, api.StdHTTPServerOptions{
 		BaseRouter: mux,
+		// Runs inside each generated route, after it has recorded the
+		// operation's security requirement, so the spec decides what's public.
+		Middlewares: []api.MiddlewareFunc{auth.Middleware(d.Auth, d.Log)},
 		// A path or query parameter doesn't parse (for example /todos/abc).
 		ErrorHandlerFunc: badRequest,
 	})

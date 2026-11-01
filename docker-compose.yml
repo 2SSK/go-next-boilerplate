@@ -21,6 +21,37 @@ services:
       timeout: 3s
       retries: 30
 
+  # Identity provider. The realm (roles, clients, dev users) is imported from
+  # deploy/keycloak/realm-app.json on first start. Everyone, browsers and
+  # containers alike, sees the issuer as http://localhost:8180; containers reach
+  # it at http://keycloak:8080 (backchannel), which the API is told about.
+  # Dev mode, in-memory storage: production needs `start` with a real database.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - ./deploy/keycloak/realm-app.json:/opt/keycloak/data/import/realm-app.json:ro
+    healthcheck:
+      # The image has no curl; ask the management port with bash's /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+
   # Applies migrations once, then exits; the api starts only if it succeeds.
   migrate:
     build: .
@@ -46,6 +77,8 @@ services:
     environment:
       <<: *db-env
       APP_ENV: production
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/app
+      OIDC_DISCOVERY_URL: http://keycloak:8080/realms/app
     ports:
       - "${PORT:-8080}:8080"
     # Probe every second while starting, then every 10s; the image's own

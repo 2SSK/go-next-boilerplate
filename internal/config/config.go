@@ -26,8 +26,21 @@ type Config struct {
 	// DocsEnabled serves /docs and /openapi.yaml (DOCS_ENABLED, default true).
 	// Turn it off where the API port is public and the docs shouldn't be.
 	DocsEnabled bool
+	// OIDC says which access tokens the API accepts (see internal/auth).
+	OIDC OIDC
 	// ShutdownTimeout bounds how long in-flight requests may drain on SIGTERM.
 	ShutdownTimeout time.Duration
+}
+
+// OIDC configures access-token verification.
+type OIDC struct {
+	// Issuer is the iss claim tokens carry (OIDC_ISSUER).
+	Issuer string
+	// DiscoveryURL is where the API reaches the provider, if not at Issuer
+	// (OIDC_DISCOVERY_URL; in Docker, Keycloak's internal address).
+	DiscoveryURL string
+	// Audience must be in each token's aud claim (OIDC_AUDIENCE).
+	Audience string
 }
 
 // Load reads configuration from the process environment. Unset variables fall
@@ -60,6 +73,12 @@ func Load() (Config, error) {
 	}
 	cfg.DocsEnabled = docs
 
+	oidc, err := loadOIDC()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OIDC = oidc
+
 	timeout, err := getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return Config{}, err
@@ -86,6 +105,24 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("invalid %s %q: must be an integer", key, v)
 	}
 	return n, nil
+}
+
+// loadOIDC reads the OIDC_* variables; defaults match docker-compose.yml.
+func loadOIDC() (OIDC, error) {
+	o := OIDC{
+		Issuer:       getEnv("OIDC_ISSUER", "http://localhost:8180/realms/app"),
+		DiscoveryURL: os.Getenv("OIDC_DISCOVERY_URL"),
+		Audience:     getEnv("OIDC_AUDIENCE", "api"),
+	}
+	for name, v := range map[string]string{"OIDC_ISSUER": o.Issuer, "OIDC_DISCOVERY_URL": o.DiscoveryURL} {
+		if v == "" {
+			continue
+		}
+		if u, err := url.Parse(v); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return OIDC{}, fmt.Errorf("%s must be an http(s) URL, got %q", name, v)
+		}
+	}
+	return o, nil
 }
 
 func getEnvBool(key string, fallback bool) (bool, error) {

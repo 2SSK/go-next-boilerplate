@@ -30,6 +30,7 @@ func TestLoad(t *testing.T) {
 		{"rejects bad duration", "SHUTDOWN_TIMEOUT", "ten"},
 		{"rejects unknown log level", "LOG_LEVEL", "loud"},
 		{"rejects a non-boolean DOCS_ENABLED", "DOCS_ENABLED", "sometimes"},
+		{"rejects an issuer that isn't a URL", "OIDC_ISSUER", "keycloak/realms/app"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

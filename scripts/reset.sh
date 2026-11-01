@@ -19,6 +19,7 @@ FEATURE_PATHS=(
   internal/handlers/todo.go
   internal/handlers/todo_test.go
   internal/database/migrations/0002_todos.sql
+  internal/database/migrations/0003_todo_owner.sql
   web/app/todos
   web/components/todos
   web/lib/todos.ts

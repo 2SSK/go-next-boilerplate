@@ -8,6 +8,9 @@ generate:
 compatibility:
   # Name enum constants Type+Value (ReadinessDatabaseUp), never a bare "Up".
   always-prefix-enum-values: true
+  # Put each operation's security requirement (BearerAuthScopes) on the request
+  # context, where internal/auth reads it. Without it, auth can't see the spec.
+  enable-auth-scopes-on-context: true
 output-options:
   # Keep every schema, even ones no path references yet. Error must exist for the
   # middleware and the 404 fallback even when no feature uses it (after `make reset`).

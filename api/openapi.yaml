@@ -9,6 +9,9 @@ info:
 
     Every error response has the same shape: {"error": {"code", "message"}}.
 
+    Operations with a `security` requirement need a bearer access token issued by
+    Keycloak for this API; the listed scopes are the realm roles the caller must hold.
+
 paths:
   /:
     get:
@@ -57,6 +60,7 @@ paths:
   /api/v1/todos:
     get:
       operationId: listTodos
+      security: [{ bearerAuth: [user] }]
       summary: List todos, newest first
       tags: [todos]
       responses:
@@ -67,9 +71,12 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Todo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     post:
       operationId: createTodo
+      security: [{ bearerAuth: [user] }]
       summary: Create a todo
       tags: [todos]
       requestBody:
@@ -85,6 +92,8 @@ paths:
               schema: { $ref: "#/components/schemas/Todo" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
 
   /api/v1/todos/{id}:
@@ -95,6 +104,7 @@ paths:
         schema: { type: integer, format: int64, minimum: 1 }
     patch:
       operationId: updateTodo
+      security: [{ bearerAuth: [user] }]
       summary: Rename a todo or mark it done
       tags: [todos]
       requestBody:
@@ -111,20 +121,44 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
     delete:
       operationId: deleteTodo
+      security: [{ bearerAuth: [user] }]
       summary: Delete a todo
       tags: [todos]
       responses:
         "204": { description: Deleted }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
   # feature:todo:end
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        An access token from Keycloak whose audience includes this API. The web app
+        attaches it on the server side; browsers never handle it directly.
+
   responses:
+    Unauthorized:
+      description: Missing, invalid, or expired access token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Valid token, but the caller lacks a required role
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     BadRequest:
       description: Malformed request (bad JSON, wrong types, invalid path value)
       content:
@@ -158,7 +192,8 @@ components:
             code:
               type: string
               description: Stable, machine-readable. Branch on this, not on the message.
-              enum: [bad_request, not_found, validation_failed, internal, unavailable]
+              enum:
+                [bad_request, unauthorized, forbidden, not_found, validation_failed, internal, unavailable]
             message:
               type: string
               description: Human-readable, safe to show to people.
