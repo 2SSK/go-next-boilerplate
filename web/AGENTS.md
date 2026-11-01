@@ -31,21 +31,27 @@ Next.js App Router, React 19, TypeScript (strict), Tailwind v4, shadcn/ui on Bas
 | Path                    | Holds                                                                 |
 | ----------------------- | --------------------------------------------------------------------- |
 | `app/globals.css`       | Every design token and the shared helper classes. Styling starts here |
-| `app/layout.tsx`        | Fonts, theme provider, navbar, footer                                 |
+| `postcss.config.mjs`    | Tailwind v4 via `@tailwindcss/postcss`, the setup Next.js documents   |
+| `app/layout.tsx`        | Fonts, theme provider, navbar, footer: everything shared by pages     |
 | `config/site.ts`        | App name, description, repo link, navbar style, navigation            |
 | `components/ui/`        | shadcn components. Add with `npx shadcn@latest add <name>`            |
 | `components/`           | App components, kebab-case files (`api-status.tsx`)                   |
+| `components/navbar.tsx` | Server-rendered navbar; `nav-links.tsx` is its only client part       |
 | `components/<feature>/` | Components owned by one feature                                       |
-| `lib/api.ts`            | `api<T>()` fetch helper and `ApiError`                                |
+| `lib/api.ts`            | Browser `api<T>()`, `ApiError`, `errorMessage()`                      |
+| `lib/api-server.ts`     | Server-only `serverApi<T>()` for server components                    |
+| `lib/api-url.ts`        | `API_URL`, shared by `next.config.ts` and `serverApi()`               |
 | `lib/<feature>.ts`      | Typed API calls and types for one feature                             |
 
 ## Conventions
 
 - **Server components by default.** Add `"use client"` only to the component that needs state,
   effects, or browser APIs, and keep that boundary as low in the tree as you can.
-- **API calls go through `lib/api.ts`** with same-origin paths (`/api/v1/...`). Never hard-code
-  the API host; `next.config.ts` forwards to `API_URL`. Each feature gets a `lib/<feature>.ts`
-  whose types mirror the Go JSON exactly (camelCase fields).
+- **API calls.** Server components use `serverApi()` (`lib/api-server.ts`). Client components
+  use `api()` (`lib/api.ts`) with same-origin paths (`/api/v1/...`), which `next.config.ts`
+  forwards to `API_URL`. Never hard-code the API host. Each feature gets a `lib/<feature>.ts`
+  with its types (mirroring the Go JSON exactly, camelCase fields), its path constant, and its
+  browser-side calls.
 - **Errors.** `api()` throws `ApiError` carrying the server's `error` message and status. Show
   it in the UI (`role="alert"`); don't swallow it.
 - **Mutations.** Update local state first and roll back if the request fails (see
@@ -58,6 +64,120 @@ Next.js App Router, React 19, TypeScript (strict), Tailwind v4, shadcn/ui on Bas
   ui component only for a behavior change, and expect `shadcn add --overwrite` to undo it.
 - **Removable features.** Feature-only lines in shared files carry `feature:<name>` markers
   (see `../AGENTS.md`). In JSX, put `{/* ... */}` marker comments on their own lines.
+
+## Rendering and performance
+
+The app must feel instant. Four things make it so; every rule below protects one of them:
+
+1. **The chrome never re-renders.** The navbar and footer live in the root layout, which stays
+   mounted while only the page under it changes. Only the small `NavLinks` part runs in the
+   browser.
+2. **Pages are ready before the click.** Each route has a prebuilt static shell, links prefetch
+   it, and page data loads on the server and streams in. There is no spinner after a page
+   appears.
+3. **Nothing moves that shouldn't.** The scrollbar's space is always reserved, skeletons match
+   the final layout, and fonts and images hold their size, so the layout never shifts.
+4. **One calm animation per page change,** which never delays navigation. The URL, tab title,
+   and content change in the same frame.
+
+### Structure
+
+- **Shared chrome lives in a layout, never in a page.** The navbar, footer, and anything else
+  shared across pages render from `app/layout.tsx`. Chrome for one section of the app goes in
+  that section's nested `layout.tsx` (use a route group `(name)/` if the URL shouldn't change).
+  Pages render only their own content, with a single `<main>` as their root.
+- **No `template.tsx`.** A template gets a new key on every navigation, so everything under it
+  remounts, loses its state, and re-runs its effects. That is exactly what layouts avoid. Use a
+  layout.
+- **Client islands are leaves.** Server components by default. When something needs the URL,
+  state, or the DOM, isolate that piece and keep the rest on the server: `Navbar` is a server
+  component, and `NavLinks` is the only part that calls `usePathname()`, so a navigation
+  re-renders a few links and nothing else. Never put `"use client"` on a layout or a page.
+
+### Data
+
+- **Load page data on the server and stream it.** An async server component calls
+  `serverApi()`, sits inside `<Suspense>` with a skeleton fallback, and passes the data as props
+  to the client component that handles interaction (`app/todos/page.tsx`). Never fetch a page's
+  initial data in `useEffect`; that adds a round trip after hydration.
+- **Every route has a static shell** (Cache Components / Partial Prerendering). Uncached data
+  and runtime APIs (`cookies()`, `headers()`, `searchParams`) go inside `<Suspense>`. Data that
+  is the same for every visitor gets `"use cache"`, with `cacheLife`/`cacheTag` for freshness.
+- **Titles are static metadata.** Use `export const metadata = { title: "..." }` so the title is
+  part of the shell and switches with the URL. Reach for `generateMetadata` only when the title
+  depends on data, and keep that data fast or cached: metadata that waits on slow data streams
+  in late, leaving the tab showing the URL in the meantime.
+- **Mutations update the screen first** and roll back on failure (see Conventions), so actions
+  never wait on the network.
+
+### Navigation
+
+- **Internal links use `<Link>`**, which prefetches the target's shell when the link enters the
+  viewport. Don't use `<a>` or `router.push` for plain navigation. For a link whose target
+  depends on its URL's params or search params, `prefetch={true}` also prefetches that cached
+  content.
+- **Pages stay mounted when hidden.** Next.js keeps recently visited routes alive, hidden, via
+  React `<Activity>`, so state survives Back. Effects are cleaned up while a route is hidden and
+  re-run when it comes back: every effect must clean up fully (timers, listeners, requests).
+  Reset state explicitly (for example after a form submits); never rely on unmount.
+- **Navigation never waits on an animation.** On a fresh load, a page's blocks rise in with a
+  stagger (`.animate-enter`). After the first client navigation, `RouteMotion` sets
+  `<html data-navigated>`: the stagger turns off, and the whole incoming page rises in once
+  (`[data-navigated] main`, 220ms). It is a plain CSS animation on the already-rendered page, so
+  the router commits immediately.
+- **Don't wrap routes in React's `<ViewTransition>`**, in a layout or in each page. A view
+  transition freezes the page until it finishes, and React holds the next navigation behind it.
+  We measured the result: a click during that window fell back to a full page reload, and the
+  tab title went blank for about a second. `<ViewTransition default="none">` is fine for one
+  contained element inside a page, never for whole routes.
+
+### Layout stability
+
+- **`html` has `scrollbar-gutter: stable`**, so short pages (no scrollbar) and long pages share
+  one centre line. Without it, the whole layout jumps 6px sideways between them.
+- **Skeletons are the real layout with placeholders** (`TodoListSkeleton`): the same container,
+  row height, and padding, so nothing moves when data streams in.
+- **Fonts come from `next/font`**, which self-hosts them and sizes a fallback to match, so text
+  doesn't reflow when the font loads. **Images use `next/image`** with `width`/`height` (or
+  `fill` in a sized box), so their space is reserved before they load.
+- **Never insert content above what's on screen** after load (banners, late-loading notices).
+  Reserve the space up front or place it below.
+
+### Runtime
+
+- **The React Compiler memoizes for you.** Don't write `useMemo`, `useCallback`, or `memo`.
+  Follow the Rules of React; the `react-hooks` lint rules enforce them (for example, no JSX
+  inside `try/catch`: do the fallible work first, then render).
+- **Background work only while visible.** Polling stops while the tab is hidden and runs at once
+  when it returns (`components/api-status.tsx`).
+- **Watch the bundle.** Prefer libraries that run in server components and never ship to the
+  browser. Icons come from lucide (tree-shaken per icon). A new client dependency needs a reason.
+- **Keep the Tailwind setup** (`postcss.config.mjs` with `@tailwindcss/postcss`). The
+  `@tailwindcss/turbopack` loader that `create-next-app` offers stopped rebuilding CSS in dev, so
+  edits to `globals.css` silently never showed up.
+
+### Budget and how to check it
+
+Measured on a production build (`npm run build && npx next start`); dev mode compiles routes on
+first visit and is no guide to speed.
+
+| Measure                                      | Budget                     | Measured |
+| -------------------------------------------- | -------------------------- | -------- |
+| Click to new page (URL, title, content)      | under 50ms once prefetched | 6–13ms   |
+| Time with no tab title during navigation     | 0 frames                   | 0        |
+| Static page from the server (`/`)            | under 20ms                 | 8ms      |
+| Streamed page with data (`/todos`, complete) | under 100ms on a local API | ~46ms    |
+| Horizontal shift between pages               | 0px                        | 0px      |
+| JavaScript for a full visit (transferred)    | under 200KB                | 164KB    |
+
+Before finishing a change that touches pages, layouts, or data loading:
+
+- [ ] `npm run build`: every page is `○` (static) or `◐` (partial) in the route table. A `ƒ`
+      (fully dynamic) page needs a reason.
+- [ ] Click between pages quickly, several times in a row: no full page reload, no blank tab
+      title, no sideways jump.
+- [ ] Load a data page with the API stopped: it renders with an inline error, not a crash.
+- [ ] Check light and dark mode, and a 375px-wide viewport.
 
 # Design system
 
@@ -129,7 +249,7 @@ items, `/[0.02]` for row hover, and `bg-destructive/[0.06]` behind error text.
 
 ## Navbar
 
-Set `navbar` in `config/site.ts`:
+Switch styles with one line in `config/site.ts`: `navbar: "bar"` or `navbar: "island"`.
 
 - **`"bar"`**: a full-width bar stuck to the top, with the app mark and name on the left and
   links on the right. Use it for platform, infra, admin, and internal tools: anything people
@@ -139,6 +259,7 @@ Set `navbar` in `config/site.ts`:
 
 Both share the active-link style (a faint foreground tint) and the theme toggle. The `<html>`
 element carries `data-navbar`, and `.page-top` reads it, so pages never hard-code top padding.
+Either style renders once from the root layout and stays mounted across navigations.
 
 ## Motion
 
@@ -146,8 +267,15 @@ element carries `data-navbar`, and `.page-top` reads it, so pages never hard-cod
   `--duration-normal` 220ms (hovers, fades, theme switch), `--duration-slow` 400ms (reveals).
 - **`.interactive`** gives any hoverable element the shared transition. Pair it with
   `active:scale-[0.98]` (buttons) or `active:scale-95` (icon buttons).
-- **`.animate-rise`** fades blocks in from 8px below. Stagger page blocks by 60ms with
-  `style={{ animationDelay }}`, about six steps at most.
+- **`.animate-enter`** is a page's entrance on a fresh load: blocks fade in from 8px below,
+  staggered by 60ms with `style={{ animationDelay }}`, about six steps at most. It switches
+  off after the first client navigation.
+- **`.animate-rise`** is the same motion for something that appears inside a page, like a new
+  list row. It always plays.
+- **Route changes**: the incoming page rises in over 220ms (`[data-navigated] main` in
+  `globals.css`), and the outgoing one is simply replaced. The navbar and footer live in the
+  layout and never move. See "Navigation" under "Rendering and performance" for why this isn't
+  a view transition.
 - The theme switch cross-fades through the View Transitions API.
 - `prefers-reduced-motion` reduces all motion to effectively nothing. Nothing may depend on an
   animation finishing.
@@ -158,8 +286,10 @@ element carries `data-navbar`, and `.page-top` reads it, so pages never hard-cod
   `aria-label` and a `title`. No emoji as icons.
 - **Status:** a pill with a dot (`components/api-status.tsx`), where the dot colour is the state.
   Use the ping animation only for a live, healthy state.
-- **Empty, loading, and error states** are designed, not left blank: a centered `subtle` line
-  of text for empty, a `Loader2` spinner for loading, and an inline `role="alert"` strip for errors.
+- **Empty, loading, and error states** are designed, not left blank. Empty: a centered
+  `subtle` line of text. Loading page data: a skeleton that mirrors the final layout
+  (`TodoListSkeleton`), so nothing jumps when the data streams in. An action in flight: a
+  `Loader2` spinner in its button. Errors: an inline `role="alert"` strip.
 - Hover-revealed actions (like delete) must stay visible on touch screens (`max-sm:opacity-100`)
   and when focused by keyboard (`focus-visible:opacity-100`).
 
@@ -176,4 +306,8 @@ element carries `data-navbar`, and `.page-top` reads it, so pages never hard-cod
 - Add a second accent colour, gradients, coloured backgrounds, or heavy shadows.
 - Use raw Tailwind palette colours (`text-gray-500`, `bg-blue-600`) or hex values in components.
 - Add top padding to a page by hand; use `.page-top`.
+- Render the navbar or footer inside a page.
+- Add a `template.tsx`, fetch a page's initial data in `useEffect`, or wrap routes in
+  `<ViewTransition>`. Each one makes navigation slower or less reliable (see "Rendering and
+  performance").
 - Introduce another icon set, font, animation library, or CSS-in-JS.

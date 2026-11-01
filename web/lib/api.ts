@@ -1,7 +1,9 @@
 /**
- * Fetch helper for the Go API. Requests go to same-origin paths ("/api/...",
- * "/healthz") and next.config.ts rewrites them to API_URL, so the browser never
- * needs CORS and the API address lives in one env var.
+ * Fetch helpers for the Go API, shared by the browser and the server.
+ *
+ * In the browser, `api()` calls same-origin paths ("/api/...", "/healthz") and
+ * next.config.ts forwards them to API_URL, so there is no CORS and no API host in client
+ * code. Server components use `serverApi()` from lib/api-server.ts instead.
  */
 
 export class ApiError extends Error {
@@ -14,14 +16,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-
+/** Returns the parsed body, or throws ApiError with the API's {"error": "..."} message. */
+export async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    // The API answers errors as {"error": "..."}; fall back to the status text.
     const body: unknown = await res.json().catch(() => null);
     const message =
       body !== null && typeof body === "object" && "error" in body && typeof body.error === "string"
@@ -29,6 +26,20 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
         : res.statusText;
     throw new ApiError(message, res.status);
   }
-
   return (res.status === 204 ? undefined : await res.json()) as T;
+}
+
+/** A message fit to show people: the API's own message, or a hint that it is down. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  return "Could not reach the API. Is it running?";
+}
+
+/** Calls the API from the browser. */
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  return parseResponse<T>(res);
 }

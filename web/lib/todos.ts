@@ -11,13 +11,13 @@ export interface Todo {
 
 export type TodoPatch = Partial<Pick<Todo, "title" | "completed">>;
 
-const BASE = "/api/v1/todos";
+export const TODOS_PATH = "/api/v1/todos";
 
+/** Browser-side mutations. The page loads the list on the server (app/todos/page.tsx). */
 export const todos = {
-  list: (): Promise<Todo[]> => api<Todo[]>(BASE, { cache: "no-store" }),
   create: (title: string): Promise<Todo> =>
-    api<Todo>(BASE, { method: "POST", body: JSON.stringify({ title }) }),
+    api<Todo>(TODOS_PATH, { method: "POST", body: JSON.stringify({ title }) }),
   update: (id: number, patch: TodoPatch): Promise<Todo> =>
-    api<Todo>(`${BASE}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  remove: (id: number): Promise<void> => api<void>(`${BASE}/${id}`, { method: "DELETE" }),
+    api<Todo>(`${TODOS_PATH}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  remove: (id: number): Promise<void> => api<void>(`${TODOS_PATH}/${id}`, { method: "DELETE" }),
 };

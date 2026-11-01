@@ -24,25 +24,25 @@ const STACK = ["Go net/http", "pgx", "Postgres", "Next.js", "shadcn/ui", "Tailwi
 export default function Home() {
   return (
     <main className="container-page page-top">
-      <div className="animate-rise" style={rise(0)}>
+      <div className="animate-enter" style={rise(0)}>
         <ApiStatus />
       </div>
 
       <h1
-        className="animate-rise mt-7 text-[40px] leading-[1.08] tracking-[-0.03em] sm:text-[56px]"
+        className="animate-enter mt-7 text-[40px] leading-[1.08] tracking-[-0.03em] sm:text-[56px]"
         style={rise(1)}
       >
         {site.name}
       </h1>
 
       <p
-        className="animate-rise text-muted-foreground mt-4 max-w-[52ch] text-[17px] leading-relaxed sm:text-[19px]"
+        className="animate-enter text-muted-foreground mt-4 max-w-[52ch] text-[17px] leading-relaxed sm:text-[19px]"
         style={rise(2)}
       >
         {site.description}
       </p>
 
-      <div className="animate-rise mt-8 flex flex-wrap items-center gap-2" style={rise(3)}>
+      <div className="animate-enter mt-8 flex flex-wrap items-center gap-2" style={rise(3)}>
         {/* feature:todo:begin */}
         <Link
           href="/todos"
@@ -60,7 +60,7 @@ export default function Home() {
         </a>
       </div>
 
-      <section className="animate-rise mt-16" style={rise(4)}>
+      <section className="animate-enter mt-16" style={rise(4)}>
         <h2 className="label">Endpoints</h2>
         <ul className="surface mt-3 divide-y overflow-hidden">
           {ENDPOINTS.map((e) => (
@@ -73,7 +73,7 @@ export default function Home() {
         </ul>
       </section>
 
-      <section className="animate-rise mt-12" style={rise(5)}>
+      <section className="animate-enter mt-12" style={rise(5)}>
         <h2 className="label">Stack</h2>
         <ul className="mt-3 flex flex-wrap gap-1.5">
           {STACK.map((s) => (

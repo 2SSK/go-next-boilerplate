@@ -131,8 +131,10 @@ products and landing pages. Page spacing follows the choice automatically.
 The full design system (tokens, type scale, motion, component rules) is in `web/AGENTS.md`.
 
 Helper classes: `container-page` (page column), `page-top` (space below the navbar), `surface` (raised card), `label` (small caps
-heading), `meta` (mono data text), `interactive` (shared transition), `animate-rise`
-(entrance; stagger it with `animationDelay`).
+heading), `meta` (mono data text), `interactive` (shared transition), `animate-enter`
+(page entrance on a fresh load; stagger it with `animationDelay`), and `animate-rise` (something
+appearing inside a page). After a client navigation the whole page rises in at once, through a
+plain CSS animation that never delays the router.
 
 ## Deploying
 

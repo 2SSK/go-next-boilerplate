@@ -11,6 +11,9 @@
 A Go API (`cmd/`, `internal/`) and a Next.js frontend (`web/`) in one repo. The browser only
 talks to Next.js, which forwards `/api/*` and `/healthz` to the API. Web-specific rules and the
 design system are in `web/AGENTS.md`; read it before touching anything under `web/`.
+Its "Rendering and performance" rules are not optional: shared chrome (navbar, footer) lives
+in layouts, never pages; client components stay small leaves; page data loads on the server
+and streams behind `<Suspense>`.
 
 ## Commands
 

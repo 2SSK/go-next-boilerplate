@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
+import { RouteMotion } from "@/components/route-motion";
 import { ThemeProvider } from "@/components/theme-provider";
 import { site } from "@/config/site";
 import "./globals.css";
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-dvh flex-col">
         <ThemeProvider>
+          <RouteMotion />
           <Navbar />
           {children}
           <Footer />

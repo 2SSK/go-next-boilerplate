@@ -36,6 +36,8 @@ services:
       context: ./web
       args:
         API_URL: http://api:8080
+    environment:
+      API_URL: http://api:8080
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:

@@ -7,7 +7,11 @@ type Status = { state: "checking" } | { state: "up"; ms: number } | { state: "do
 
 const POLL_MS = 10_000;
 
-/** A live pill showing whether the Go API (and its database) answers /healthz. */
+/**
+ * A live pill showing whether the Go API (and its database) answers /healthz. It polls
+ * only while visible: a hidden tab, or a route Next.js keeps hidden after navigating away
+ * (effects are cleaned up then), sends no requests.
+ */
 export function ApiStatus() {
   const [status, setStatus] = useState<Status>({ state: "checking" });
 
@@ -28,11 +32,17 @@ export function ApiStatus() {
       if (!cancelled) setStatus(next);
     };
 
-    void check();
-    const id = setInterval(() => void check(), POLL_MS);
+    // Poll only while the tab is visible, and check at once when it becomes visible again
+    const tick = (): void => {
+      if (document.visibilityState === "visible") void check();
+    };
+    tick();
+    const id = setInterval(tick, POLL_MS);
+    document.addEventListener("visibilitychange", tick);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
     };
   }, []);
 

@@ -1,38 +1,31 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { type Todo, todos as todosApi } from "@/lib/todos";
 import { cn } from "@/lib/utils";
 
-function messageOf(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  return "Could not reach the API. Is it running?";
+interface TodoListProps {
+  /** The list as the server loaded it, so the first paint already has data. */
+  initialTodos: Todo[];
+  /** Set when the server could not load the list. */
+  initialError?: string;
 }
 
 /**
- * The todo demo: list, add, toggle, delete. Toggles and deletes update the list first
- * and roll back if the API refuses, so the UI never waits on the network.
+ * The todo demo: add, toggle, delete. Starts from server-loaded data. Toggles and
+ * deletes update the list first and roll back if the API refuses, so the UI never waits
+ * on the network.
  */
-export function TodoList() {
-  const [items, setItems] = useState<Todo[] | null>(null);
+export function TodoList({ initialTodos, initialError }: Readonly<TodoListProps>) {
+  const [items, setItems] = useState<Todo[]>(initialTodos);
   const [title, setTitle] = useState("");
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    todosApi
-      .list()
-      .then(setItems)
-      .catch((err: unknown) => {
-        setItems([]);
-        setError(messageOf(err));
-      });
-  }, []);
+  const [error, setError] = useState<string | null>(initialError ?? null);
 
   const add = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -41,10 +34,10 @@ export function TodoList() {
     setError(null);
     try {
       const created = await todosApi.create(title);
-      setItems((prev) => [created, ...(prev ?? [])]);
+      setItems((prev) => [created, ...prev]);
       setTitle("");
     } catch (err) {
-      setError(messageOf(err));
+      setError(errorMessage(err));
     } finally {
       setAdding(false);
     }
@@ -53,13 +46,13 @@ export function TodoList() {
   /** Applies change locally, then calls the API; restores the snapshot on failure. */
   const optimistic = async (change: (prev: Todo[]) => Todo[], call: () => Promise<unknown>) => {
     const snapshot = items;
-    setItems((prev) => change(prev ?? []));
+    setItems(change);
     setError(null);
     try {
       await call();
     } catch (err) {
       setItems(snapshot);
-      setError(messageOf(err));
+      setError(errorMessage(err));
     }
   };
 
@@ -75,7 +68,7 @@ export function TodoList() {
       () => todosApi.remove(t.id),
     );
 
-  const remaining = items?.filter((t) => !t.completed).length ?? 0;
+  const remaining = items.filter((t) => !t.completed).length;
 
   return (
     <div className="surface overflow-hidden">
@@ -108,11 +101,7 @@ export function TodoList() {
         </p>
       )}
 
-      {items === null ? (
-        <div className="text-subtle flex justify-center py-12">
-          <Loader2 className="size-5 animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
+      {items.length === 0 ? (
         <p className="text-subtle py-12 text-center text-sm">
           Nothing here yet. Add your first todo.
         </p>
@@ -152,13 +141,36 @@ export function TodoList() {
         </ul>
       )}
 
-      {items !== null && items.length > 0 && (
+      {items.length > 0 && (
         <div className="flex items-center justify-between border-t px-5 py-2.5">
           <span className="meta text-xs">
             {remaining} of {items.length} left
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Shown while the server loads the list: the real layout, with placeholder rows. */
+export function TodoListSkeleton() {
+  return (
+    <div className="surface overflow-hidden" aria-busy="true" aria-label="Loading todos">
+      <div className="flex items-center gap-2 border-b p-3">
+        <div className="h-10 flex-1" />
+        <div className="bg-foreground/[0.05] h-9 w-20 rounded-full" />
+      </div>
+      <ul className="divide-y">
+        {[60, 40, 52].map((width) => (
+          <li key={width} className="flex items-center gap-3 px-5 py-3.5">
+            <div className="bg-foreground/[0.06] size-4 rounded-[4px]" />
+            <div
+              className="bg-foreground/[0.06] h-3.5 animate-pulse rounded"
+              style={{ width: `${width}%` }}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
