@@ -280,7 +280,11 @@ Either style renders once from the root layout and stays mounted across navigati
   `globals.css`), and the outgoing one is simply replaced. The navbar and footer live in the
   layout and never move. See "Navigation" under "Rendering and performance" for why this isn't
   a view transition.
-- The theme switch cross-fades through the View Transitions API.
+- **The theme switch** sweeps the new theme in as a circle growing from the bottom-left corner
+  (650ms, `--ease-in-out-cubic`), through the View Transitions API. The toggle applies the theme
+  class to `<html>` synchronously inside the transition; next-themes alone would apply it in an
+  effect, after the browser's "after" snapshot, and the sweep would reveal the old theme. The
+  animation is scoped by `data-theme-switch`, so other view transitions don't sweep.
 - `prefers-reduced-motion` reduces all motion to effectively nothing. Nothing may depend on an
   animation finishing.
 

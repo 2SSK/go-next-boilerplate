@@ -8,12 +8,27 @@ export function ThemeToggle() {
 
   const toggle = (): void => {
     const next = resolvedTheme === "dark" ? "light" : "dark";
-    // A short cross-fade (globals.css) where supported, an instant switch elsewhere
-    if (document.startViewTransition) {
-      document.startViewTransition(() => setTheme(next));
-    } else {
+    // Apply the theme to <html> synchronously: next-themes would do it in an effect,
+    // after the view transition has already taken its "after" snapshot.
+    const apply = (): void => {
+      const root = document.documentElement;
+      root.classList.remove("light", "dark");
+      root.classList.add(next);
+      root.style.colorScheme = next;
       setTheme(next);
+    };
+
+    if (!document.startViewTransition) {
+      apply();
+      return;
     }
+    // The new theme sweeps in from the bottom-left corner (globals.css). The
+    // attribute scopes that animation to theme switches only.
+    const root = document.documentElement;
+    root.dataset.themeSwitch = "";
+    document.startViewTransition(apply).finished.finally(() => {
+      delete root.dataset.themeSwitch;
+    });
   };
 
   return (
