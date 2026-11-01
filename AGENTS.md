@@ -99,6 +99,12 @@ Run everything through the Makefile; `make` lists the targets.
   `auth.PrincipalFrom(ctx)`. Anything a user owns is scoped by `Principal.Subject` in the
   store, and someone else's resource is a 404, never a 403. Keycloak's realm is
   `deploy/keycloak/realm-app.json`; change roles and clients there, not by hand in the console.
+- **Workflows.** Writes that should be retried and recorded run as Temporal workflows: the
+  handler calls a `...Writer` interface, implemented by a runner in `internal/workflows` that
+  starts the workflow through `Runner.Run` and waits. Workflow functions only call activities
+  and `workflow.*` APIs (no clock, randomness, or I/O); the I/O lives in `internal/activities`.
+  Activities must be safe to retry; mark errors that retrying can't fix as non-retryable.
+  Register every workflow and activity in `cmd/worker`. Reads don't go through Temporal.
 - **Security headers.** `middleware.SecurityHeaders` covers every API response. A handler that
   serves HTML sets its own Content-Security-Policy, allowing inline scripts by hash only (see
   `internal/docs`). Loosening the web policy in `next.config.ts` needs a stated reason.

@@ -28,8 +28,17 @@ type Config struct {
 	DocsEnabled bool
 	// OIDC says which access tokens the API accepts (see internal/auth).
 	OIDC OIDC
+	// Temporal is where workflows run (see internal/temporal).
+	Temporal Temporal
 	// ShutdownTimeout bounds how long in-flight requests may drain on SIGTERM.
 	ShutdownTimeout time.Duration
+}
+
+// Temporal configures the workflow engine connection.
+type Temporal struct {
+	Address   string // TEMPORAL_ADDRESS, host:port of the frontend
+	Namespace string // TEMPORAL_NAMESPACE
+	TaskQueue string // TEMPORAL_TASK_QUEUE, shared by the API and the worker
 }
 
 // OIDC configures access-token verification.
@@ -72,6 +81,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.DocsEnabled = docs
+
+	cfg.Temporal = Temporal{
+		Address:   getEnv("TEMPORAL_ADDRESS", "localhost:7233"),
+		Namespace: getEnv("TEMPORAL_NAMESPACE", "default"),
+		TaskQueue: getEnv("TEMPORAL_TASK_QUEUE", "app"),
+	}
 
 	oidc, err := loadOIDC()
 	if err != nil {

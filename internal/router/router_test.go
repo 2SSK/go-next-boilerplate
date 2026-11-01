@@ -11,9 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/client"
+
 	"github.com/2SSK/go-next-boilerplate/api"
 	"github.com/2SSK/go-next-boilerplate/internal/auth"
 	"github.com/2SSK/go-next-boilerplate/internal/middleware"
+	"github.com/2SSK/go-next-boilerplate/internal/workflows"
 )
 
 // acceptAll signs in anyone presenting "Bearer good" as a user.
@@ -26,9 +30,21 @@ func (acceptAll) Verify(_ context.Context, raw string) (auth.Principal, error) {
 	return auth.Principal{Subject: "u1", Roles: []string{"user"}}, nil
 }
 
+// temporalDown is a Temporal client that can't reach the server.
+type temporalDown struct{ client.Client }
+
+func (temporalDown) ExecuteWorkflow(context.Context, client.StartWorkflowOptions, any, ...any) (client.WorkflowRun, error) {
+	return nil, serviceerror.NewUnavailable("connection refused")
+}
+
 // The requests below never reach the database, so a nil pool is enough.
 func testRoutes(docs bool) http.Handler {
-	return Routes(Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), DocsEnabled: docs, Auth: acceptAll{}})
+	return Routes(Deps{
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DocsEnabled: docs,
+		Auth:        acceptAll{},
+		Workflows:   workflows.NewRunner(temporalDown{}, "test", 0),
+	})
 }
 
 func TestRoutes(t *testing.T) {
@@ -52,6 +68,7 @@ func TestRoutes(t *testing.T) {
 		{"wrong JSON type", http.MethodPost, "/api/v1/todos", `{"title":42}`, true, http.StatusBadRequest, api.ErrorErrorCodeBadRequest, "application/json"},                                              // feature:todo
 		{"non-numeric id", http.MethodPatch, "/api/v1/todos/abc", `{}`, true, http.StatusBadRequest, api.ErrorErrorCodeBadRequest, "application/json"},                                                    // feature:todo
 		{"body over the limit", http.MethodPost, "/api/v1/todos", `{"title":"` + strings.Repeat("a", maxBodyBytes) + `"}`, true, http.StatusBadRequest, api.ErrorErrorCodeBadRequest, "application/json"}, // feature:todo
+		{"write while Temporal is down", http.MethodPost, "/api/v1/todos", `{"title":"x"}`, true, http.StatusServiceUnavailable, api.ErrorErrorCodeUnavailable, "application/json"},                       // feature:todo
 	}
 	h := testRoutes(true)
 	for _, tt := range tests {

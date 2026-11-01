@@ -9,10 +9,15 @@ import (
 	"github.com/2SSK/go-next-boilerplate/internal/models"
 )
 
-// TodoStore is the storage TodoHandler needs; store.Todos implements it and
-// tests use an in-memory fake. Every call is scoped to one owner.
-type TodoStore interface {
+// TodoReader reads todos straight from storage; store.Todos implements it.
+type TodoReader interface {
 	List(ctx context.Context, owner string) ([]models.Todo, error)
+}
+
+// TodoWriter changes todos. In the app it's workflows.TodoRunner, which runs
+// each write as a Temporal workflow; tests use an in-memory fake. Every call
+// is scoped to one owner.
+type TodoWriter interface {
 	Create(ctx context.Context, owner, title string) (models.Todo, error)
 	Update(ctx context.Context, owner string, id int64, p models.TodoPatch) (models.Todo, error)
 	Delete(ctx context.Context, owner string, id int64) error
@@ -31,14 +36,17 @@ func owner(ctx context.Context) (string, error) {
 	return p.Subject, nil
 }
 
-// TodoHandler implements the todo operations.
+// TodoHandler implements the todo operations. Reads go to the database
+// directly; writes go through writer.
 type TodoHandler struct {
-	store TodoStore
+	reader TodoReader
+	writer TodoWriter
 }
 
-// NewTodoHandler returns a TodoHandler backed by store.
-func NewTodoHandler(store TodoStore) *TodoHandler {
-	return &TodoHandler{store: store}
+// NewTodoHandler returns a TodoHandler that reads from reader and writes
+// through writer.
+func NewTodoHandler(reader TodoReader, writer TodoWriter) *TodoHandler {
+	return &TodoHandler{reader: reader, writer: writer}
 }
 
 // ListTodos implements GET /api/v1/todos.
@@ -47,7 +55,7 @@ func (h *TodoHandler) ListTodos(ctx context.Context, _ api.ListTodosRequestObjec
 	if err != nil {
 		return nil, err
 	}
-	todos, err := h.store.List(ctx, who)
+	todos, err := h.reader.List(ctx, who)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +76,7 @@ func (h *TodoHandler) CreateTodo(ctx context.Context, req api.CreateTodoRequestO
 	if err != nil {
 		return nil, err
 	}
-	t, err := h.store.Create(ctx, who, title)
+	t, err := h.writer.Create(ctx, who, title)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +104,7 @@ func (h *TodoHandler) UpdateTodo(ctx context.Context, req api.UpdateTodoRequestO
 	if err != nil {
 		return nil, err
 	}
-	t, err := h.store.Update(ctx, who, req.Id, p)
+	t, err := h.writer.Update(ctx, who, req.Id, p)
 	if errors.Is(err, models.ErrNotFound) {
 		return api.UpdateTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
 	}
@@ -115,7 +123,7 @@ func (h *TodoHandler) DeleteTodo(ctx context.Context, req api.DeleteTodoRequestO
 	if err != nil {
 		return nil, err
 	}
-	err = h.store.Delete(ctx, who, req.Id)
+	err = h.writer.Delete(ctx, who, req.Id)
 	if errors.Is(err, models.ErrNotFound) {
 		return api.DeleteTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
 	}

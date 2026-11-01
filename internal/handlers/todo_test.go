@@ -14,7 +14,7 @@ import (
 	"github.com/2SSK/go-next-boilerplate/internal/models"
 )
 
-// memStore is an in-memory TodoStore for handler tests, scoped by owner like
+// memStore is an in-memory TodoReader and TodoWriter for handler tests, scoped by owner like
 // the real one.
 type memStore struct {
 	mu     sync.Mutex
@@ -103,7 +103,7 @@ func TestCreateTodo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewTodoHandler(&memStore{})
+			h := newTestHandler(&memStore{})
 			resp, err := h.CreateTodo(as("alice"), api.CreateTodoRequestObject{Body: &api.NewTodo{Title: tt.title}})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -132,7 +132,7 @@ func checkCreate(t *testing.T, resp api.CreateTodoResponseObject, wantTitle, wan
 
 func TestListTodos(t *testing.T) {
 	t.Run("empty list is an empty array", func(t *testing.T) {
-		resp, err := NewTodoHandler(&memStore{}).ListTodos(as("alice"), api.ListTodosRequestObject{})
+		resp, err := newTestHandler(&memStore{}).ListTodos(as("alice"), api.ListTodosRequestObject{})
 		r, ok := resp.(api.ListTodos200JSONResponse)
 		if err != nil || !ok || r == nil || len(r) != 0 {
 			t.Errorf("got %#v, %v; want an empty, non-nil list", resp, err)
@@ -140,7 +140,7 @@ func TestListTodos(t *testing.T) {
 	})
 
 	t.Run("store failure is returned as an error, not a response", func(t *testing.T) {
-		_, err := NewTodoHandler(&memStore{err: errors.New("pq: secret detail")}).ListTodos(as("alice"), api.ListTodosRequestObject{})
+		_, err := newTestHandler(&memStore{err: errors.New("pq: secret detail")}).ListTodos(as("alice"), api.ListTodosRequestObject{})
 		if err == nil {
 			t.Error("want the store error passed up, so the server logs it and answers a generic 500")
 		}
@@ -166,7 +166,7 @@ func TestUpdateTodo(t *testing.T) {
 			store := &memStore{}
 			_, _ = store.Create(context.Background(), "alice", "first")
 
-			resp, err := NewTodoHandler(store).UpdateTodo(as("alice"), api.UpdateTodoRequestObject{Id: tt.id, Body: &tt.body})
+			resp, err := newTestHandler(store).UpdateTodo(as("alice"), api.UpdateTodoRequestObject{Id: tt.id, Body: &tt.body})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -183,7 +183,7 @@ func TestUpdateTodo(t *testing.T) {
 func TestDeleteTodo(t *testing.T) {
 	store := &memStore{}
 	_, _ = store.Create(context.Background(), "alice", "first")
-	h := NewTodoHandler(store)
+	h := newTestHandler(store)
 	ctx := as("alice")
 
 	if resp, _ := h.DeleteTodo(ctx, api.DeleteTodoRequestObject{Id: 1}); fmt.Sprintf("%T", resp) != "api.DeleteTodo204Response" {
@@ -196,7 +196,7 @@ func TestDeleteTodo(t *testing.T) {
 
 func TestTodosAreIsolatedPerUser(t *testing.T) {
 	store := &memStore{}
-	h := NewTodoHandler(store)
+	h := newTestHandler(store)
 	created, err := h.CreateTodo(as("alice"), api.CreateTodoRequestObject{Body: &api.NewTodo{Title: "alice's"}})
 	if err != nil {
 		t.Fatal(err)
@@ -221,8 +221,13 @@ func TestTodosAreIsolatedPerUser(t *testing.T) {
 
 func TestTodoOperationsRefuseAnonymousCallers(t *testing.T) {
 	// Only reachable if a route lost its security requirement; must fail closed.
-	h := NewTodoHandler(&memStore{})
+	h := newTestHandler(&memStore{})
 	if _, err := h.ListTodos(context.Background(), api.ListTodosRequestObject{}); !errors.Is(err, errNoPrincipal) {
 		t.Errorf("ListTodos without a caller: err = %v, want errNoPrincipal", err)
 	}
+}
+
+// newTestHandler reads and writes through the same in-memory store.
+func newTestHandler(m *memStore) *TodoHandler {
+	return NewTodoHandler(m, m)
 }

@@ -8,11 +8,12 @@ COPY cmd ./cmd
 COPY internal ./internal
 # The release this image is built from; shown on every log line. CI passes the commit.
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/ ./cmd/api ./cmd/worker
 
 FROM alpine:3.24
 RUN adduser -D -u 10001 app
-COPY --from=builder /out/api /usr/local/bin/api
+# One image, two commands: `api` (the default) and `worker`.
+COPY --from=builder /out/api /out/worker /usr/local/bin/
 USER app
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/livez || exit 1

@@ -24,6 +24,8 @@ import (
 	"github.com/2SSK/go-next-boilerplate/internal/database"
 	"github.com/2SSK/go-next-boilerplate/internal/logger"
 	"github.com/2SSK/go-next-boilerplate/internal/router"
+	"github.com/2SSK/go-next-boilerplate/internal/temporal"
+	"github.com/2SSK/go-next-boilerplate/internal/workflows"
 )
 
 // version is set at build time (-ldflags "-X main.version=..."); otherwise it
@@ -82,6 +84,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("%w; run `make db-migrate` (or `api migrate`) first", err)
 	}
 
+	// Connects on first use, so the API starts (and serves reads) while
+	// Temporal is down; writes answer 503 until it's back.
+	tc, err := temporal.NewLazyClient(cfg.Temporal, log)
+	if err != nil {
+		return err
+	}
+	defer tc.Close()
+
 	srv := router.New(cfg.Port, router.Routes(router.Deps{
 		Log:         log,
 		DB:          db,
@@ -92,6 +102,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			DiscoveryURL: cfg.OIDC.DiscoveryURL,
 			Audience:     cfg.OIDC.Audience,
 		}),
+		Workflows: workflows.NewRunner(tc, cfg.Temporal.TaskQueue, 0),
 	}))
 
 	errCh := make(chan error, 1)

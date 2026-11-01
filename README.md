@@ -22,7 +22,7 @@ Needs Go 1.25+, Node 22+, and Docker.
 gh repo create my-app --template 2SSK/go-next-boilerplate --private --clone
 cd my-app
 make setup   # .env, Go modules, npm install
-make dev     # Postgres, migrations, API on :8080, web on :3000
+make dev     # Postgres, Keycloak, Temporal, migrations, API on :8080, worker, web on :3000
 ```
 
 Open http://localhost:3000. The status pill on the landing page turns green once the API and
@@ -39,27 +39,29 @@ make reset                                             # optional: remove the to
 
 Run `make` to list them all. The ones you'll use most:
 
-| Command                 | What it does                                                         |
-| ----------------------- | -------------------------------------------------------------------- |
-| `make dev`              | Postgres, migrations, API, and web together; Ctrl-C stops everything |
-| `make generate`         | Regenerate the Go server and TypeScript types from the spec          |
-| `make db-migrate`       | Apply pending migrations                                             |
-| `make db-status`        | List applied and pending migrations                                  |
-| `make test`             | Go unit tests (race detector) and the `.env` round-trip test         |
-| `make test-integration` | Go tests against the real database                                   |
-| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier                  |
-| `make check`            | lint + contract check + test + build, the gates CI runs              |
-| `make up` / `make down` | the whole stack in Docker, production builds                         |
-| `make e2e`              | Playwright browser tests against the running stack (`make up` first) |
-| `make db-shell`         | psql into the dev database                                           |
-| `make db-reset`         | wipe the dev database                                                |
-| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt)          |
+| Command                 | What it does                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| `make dev`              | Postgres, Keycloak, Temporal, migrations, API, worker, and web; Ctrl-C stops everything |
+| `make tp-up`            | Temporal dev server alone (UI at http://localhost:8233)                                 |
+| `make generate`         | Regenerate the Go server and TypeScript types from the spec                             |
+| `make db-migrate`       | Apply pending migrations                                                                |
+| `make db-status`        | List applied and pending migrations                                                     |
+| `make test`             | Go unit tests (race detector) and the `.env` round-trip test                            |
+| `make test-integration` | Go tests against the real database                                                      |
+| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier                                     |
+| `make check`            | lint + contract check + test + build, the gates CI runs                                 |
+| `make up` / `make down` | the whole stack in Docker, production builds                                            |
+| `make e2e`              | Playwright browser tests against the running stack (`make up` first)                    |
+| `make db-shell`         | psql into the dev database                                                              |
+| `make db-reset`         | wipe the dev database                                                                   |
+| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt)                             |
 
 ## Layout
 
 ```
 api/                  the contract: openapi.yaml, and the Go code generated from it
 cmd/api/              entry point: `api` serves HTTP, `api migrate` applies migrations
+cmd/worker/           runs Temporal workflows and activities
 internal/
   router/             mounts the generated routes, the docs, the JSON 404; middleware; http.Server
   docs/               /openapi.yaml and the interactive /docs page, served by the API
@@ -67,6 +69,9 @@ internal/
   models/             domain types and rules (Todo, NormalizeTitle, ErrNotFound)
   store/              Postgres reads and writes, returning models
   database/           pgx pool and the migrator (migrations/*.sql)
+  workflows/          Temporal workflows, and the Runner the API starts them with
+  activities/         the steps workflows run (database writes), retried by Temporal
+  temporal/           Temporal client setup
   config/             env vars → Config, with defaults and validation
   middleware/         request ID, access log, panic recovery, body limit
   httpx/              JSON responses outside the generated handlers
@@ -136,6 +141,9 @@ over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
 | `KEYCLOAK_PORT`                                       | `8180`                                                | Compose      |
 | `OIDC_ISSUER`, `OIDC_AUDIENCE`                        | `http://localhost:8180/realms/app`, `api`             | API          |
 | `OIDC_DISCOVERY_URL`                                  | unset; Keycloak's internal address in Docker          | API          |
+| `TEMPORAL_ADDRESS`                                    | `localhost:7233`                                      | API, worker  |
+| `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`           | `default`, `app`                                      | API, worker  |
+| `TEMPORAL_PORT`, `TEMPORAL_UI_PORT`                   | `7233`, `8233`                                        | Compose      |
 | `APP_URL`                                             | `http://localhost:3000`, this app's public URL        | Web          |
 | `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | the dev realm's values                                | Web          |
 | `AUTH_SECRET`                                         | required in production: 32+ random characters         | Web          |
@@ -167,6 +175,28 @@ http://localhost:8180, `admin`/`admin`). Dev users: `alice`/`alice` (role `user`
 
 The tradeoff of an in-app sign-in form (no Keycloak MFA, password reset, or social login)
 and how to switch back to Keycloak's own pages are in `docs/adr/0005`.
+
+## Workflows (platform)
+
+Todo writes run as Temporal workflows; reads go straight to Postgres.
+
+```
+browser → web → API ──start workflow──▶ Temporal ◀──poll── worker ──activity──▶ Postgres
+                 └──── waits for the result (up to 10s) ◀──────────┘
+```
+
+- **The API starts the workflow and waits**, so responses are the same as before (201, 404,
+  ...). If Temporal is down, or no worker finishes in time, writes answer **503** while reads
+  keep working.
+- **The worker** (`make dev-worker`, or the `worker` service in Docker) does the work. Failed
+  activities are retried with backoff, up to 5 attempts; a missing todo isn't retried.
+- **Retries are safe.** The workflow ID includes the user and the `X-Request-ID`, so the same
+  request sent twice is done once.
+- **See every write** in the Temporal UI at http://localhost:8233: inputs, attempts, errors.
+
+To run a new write through Temporal: add an activity method in `internal/activities`, a
+workflow in `internal/workflows`, a small runner like `TodoRunner`, and register both in
+`cmd/worker`. Details and tradeoffs are in `docs/adr/0006`.
 
 ## Migrations
 

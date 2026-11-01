@@ -37,8 +37,8 @@ In order; each step ends with something that runs and is tested.
 1. [x] Keycloak: in-app sign-in with server-held sessions, token verification (with
        audience) and role checks in Go, security schemes in the spec, per-user todos,
        e2e sign-in tests (ADR 5).
-2. Temporal: a separate `cmd/worker`, an example workflow with retries and tests, endpoints to
-   start a workflow and read its status, a Compose profile.
+2. [x] Temporal: todo writes run as workflows on a separate `cmd/worker`, with retries,
+       idempotent workflow IDs, a 503 when Temporal is down, and tests (ADR 6).
 3. Observability: OpenTelemetry traces across HTTP, Postgres, and Temporal (exporter off by
    default), Prometheus metrics, Grafana behind a profile.
 4. Tag `platform/v1.0.0`.

@@ -201,6 +201,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description A dependency is down or too slow (for writes, the workflow engine); retry later */
+        Unavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Unexpected server error; details are logged, never returned */
         Internal: {
             headers: {
@@ -337,6 +346,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
     deleteTodo: {
@@ -362,6 +372,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
     updateTodo: {
@@ -394,6 +405,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
         };
     };
 }

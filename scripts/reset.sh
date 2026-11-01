@@ -18,6 +18,10 @@ FEATURE_PATHS=(
   internal/store/todo_integration_test.go
   internal/handlers/todo.go
   internal/handlers/todo_test.go
+  internal/activities/todo.go
+  internal/workflows/todo.go
+  internal/workflows/todo_runner.go
+  internal/workflows/todo_test.go
   internal/database/migrations/0002_todos.sql
   internal/database/migrations/0003_todo_owner.sql
   web/app/todos

@@ -52,6 +52,21 @@ services:
       start_period: 60s
       start_interval: 2s
 
+  # Workflow engine. Temporal's dev server: one process, history in memory, web
+  # UI at http://localhost:8233. Production uses Temporal Cloud or a real cluster.
+  temporal:
+    image: temporalio/temporal:1.9.1
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--ui-port", "8233"]
+    ports:
+      - "127.0.0.1:${TEMPORAL_PORT:-7233}:7233"
+      - "127.0.0.1:${TEMPORAL_UI_PORT:-8233}:8233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
   # Applies migrations once, then exits; the api starts only if it succeeds.
   migrate:
     build: .
@@ -79,6 +94,7 @@ services:
       APP_ENV: production
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/app
       OIDC_DISCOVERY_URL: http://keycloak:8080/realms/app
+      TEMPORAL_ADDRESS: temporal:7233
     ports:
       - "${PORT:-8080}:8080"
     # Probe every second while starting, then every 10s; the image's own
@@ -92,6 +108,28 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    profiles: [full]
+
+  # Runs the workflows the API starts. Same image as the API, other command.
+  worker:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    entrypoint: ["worker"]
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      APP_ENV: production
+      TEMPORAL_ADDRESS: temporal:7233
+    # No HTTP port, so no healthcheck: the image's probe would always fail.
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
     profiles: [full]
 
   web:

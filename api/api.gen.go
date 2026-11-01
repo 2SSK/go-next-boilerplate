@@ -188,6 +188,9 @@ type NotFound = Error
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// Unavailable defines model for Unavailable.
+type Unavailable = Error
+
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
@@ -521,6 +524,8 @@ type NotFoundJSONResponse Error
 
 type UnauthorizedJSONResponse Error
 
+type UnavailableJSONResponse Error
+
 type ValidationFailedJSONResponse Error
 
 type GetRootRequestObject struct {
@@ -699,6 +704,20 @@ func (response CreateTodo500JSONResponse) VisitCreateTodoResponse(w http.Respons
 	return err
 }
 
+type CreateTodo503JSONResponse struct{ UnavailableJSONResponse }
+
+func (response CreateTodo503JSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteTodoRequestObject struct {
 	Id int64 `json:"id"`
 }
@@ -781,6 +800,20 @@ func (response DeleteTodo500JSONResponse) VisitDeleteTodoResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo503JSONResponse struct{ UnavailableJSONResponse }
+
+func (response DeleteTodo503JSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -888,6 +921,20 @@ func (response UpdateTodo500JSONResponse) VisitUpdateTodoResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo503JSONResponse struct{ UnavailableJSONResponse }
+
+func (response UpdateTodo503JSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }

@@ -95,6 +95,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /api/v1/todos/{id}:
     parameters:
@@ -124,6 +125,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
+        "503": { $ref: "#/components/responses/Unavailable" }
     delete:
       operationId: deleteTodo
       security: [{ bearerAuth: [user] }]
@@ -136,6 +138,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/Internal" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   # feature:todo:end
 
 components:
@@ -171,6 +174,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     ValidationFailed:
       description: Well-formed request that breaks a rule
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: A dependency is down or too slow (for writes, the workflow engine); retry later
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

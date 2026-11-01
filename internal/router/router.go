@@ -4,6 +4,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/2SSK/go-next-boilerplate/internal/httpx"
 	"github.com/2SSK/go-next-boilerplate/internal/middleware"
 	"github.com/2SSK/go-next-boilerplate/internal/store" // feature:todo
+	"github.com/2SSK/go-next-boilerplate/internal/workflows"
 )
 
 // AppName is reported by GET /.
@@ -34,6 +36,8 @@ type Deps struct {
 	DocsEnabled bool
 	// Auth verifies access tokens for operations the spec secures.
 	Auth auth.TokenVerifier
+	// Workflows runs writes as Temporal workflows.
+	Workflows *workflows.Runner
 }
 
 // Routes returns the full handler. Every route is defined in api/openapi.yaml;
@@ -41,7 +45,7 @@ type Deps struct {
 func Routes(d Deps) http.Handler {
 	h := handlers.Handlers{
 		SystemHandler: handlers.NewSystemHandler(AppName, d.DB, docsPath(d.DocsEnabled)),
-		TodoHandler:   handlers.NewTodoHandler(store.NewTodos(d.DB)), // feature:todo
+		TodoHandler:   handlers.NewTodoHandler(store.NewTodos(d.DB), workflows.NewTodoRunner(d.Workflows)), // feature:todo
 	}
 
 	// Every failure path answers with the contract's error shape.
@@ -51,6 +55,11 @@ func Routes(d Deps) http.Handler {
 		// A handler returned an error: unexpected, so log it and say nothing
 		// specific. Database details never reach the client.
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			if errors.Is(err, workflows.ErrUnavailable) {
+				d.Log.WarnContext(r.Context(), "workflow unavailable", "route", r.Pattern, "error", err)
+				httpx.Error(w, http.StatusServiceUnavailable, api.ErrorErrorCodeUnavailable, "temporarily unavailable, try again")
+				return
+			}
 			d.Log.ErrorContext(r.Context(), "request failed", "route", r.Pattern, "error", err)
 			httpx.Error(w, http.StatusInternalServerError, api.ErrorErrorCodeInternal, "internal server error")
 		},

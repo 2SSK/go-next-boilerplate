@@ -9,7 +9,7 @@ COMPOSE ?= docker compose
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev dev-api dev-web db-up kc-up db-migrate db-status db-down db-reset db-shell \
+.PHONY: help setup dev dev-api dev-worker dev-web db-up kc-up tp-up db-migrate db-status db-down db-reset db-shell \
         test test-integration cover lint fmt generate generate-check build up down e2e check reset rename clean
 
 ## help: list targets
@@ -22,16 +22,21 @@ setup:
 	go mod download
 	cd web && npm ci
 
-## dev: run Postgres and Keycloak, apply migrations, then the API and web app (Ctrl-C stops all)
-dev: db-up kc-up db-migrate
+## dev: run Postgres, Keycloak, and Temporal, apply migrations, then the API, worker, and web app (Ctrl-C stops all)
+dev: db-up kc-up tp-up db-migrate
 	@trap 'kill 0' INT TERM EXIT; \
 	$(MAKE) --no-print-directory dev-api & \
+	$(MAKE) --no-print-directory dev-worker & \
 	$(MAKE) --no-print-directory dev-web & \
 	wait
 
 ## dev-api: run the Go API
 dev-api:
 	$(ENV) go run ./cmd/api
+
+## dev-worker: run the Temporal worker
+dev-worker:
+	$(ENV) go run ./cmd/worker
 
 ## dev-web: run the Next.js dev server
 dev-web:
@@ -44,6 +49,10 @@ db-up:
 ## kc-up: start Keycloak (http://localhost:8180, admin/admin) and wait until it is ready
 kc-up:
 	$(COMPOSE) up -d --wait keycloak
+
+## tp-up: start Temporal (UI on http://localhost:8233) and wait until it is ready
+tp-up:
+	$(COMPOSE) up -d --wait temporal
 
 ## db-migrate: apply pending migrations (the API never does this itself)
 db-migrate:
@@ -101,12 +110,12 @@ fmt:
 	gofmt -w cmd internal api
 	cd web && npm run format
 
-## build: compile the API to bin/api and build the web app
+## build: compile the API and worker to bin/ and build the web app
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-X main.version=$(VERSION)" -o bin/api ./cmd/api
+	CGO_ENABLED=0 go build -trimpath -ldflags="-X main.version=$(VERSION)" -o bin/ ./cmd/api ./cmd/worker
 	cd web && npm run build
 
-## up: build and run the whole stack in Docker (web on :3000, API on :8080)
+## up: build and run the whole stack in Docker (web on :3000, API on :8080, Temporal UI on :8233)
 up:
 	$(COMPOSE) --profile full up -d --build --wait
 
