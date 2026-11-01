@@ -122,9 +122,15 @@ services:
       <<: *db-env
       APP_ENV: production
       TEMPORAL_ADDRESS: temporal:7233
-    # No HTTP port, so no healthcheck: the image's probe would always fail.
+    # No HTTP port, so the image's /livez probe doesn't apply. Healthy means the
+    # worker process (PID 1) is running; it exits if it loses Temporal for good,
+    # and `up --wait` needs every service to have a healthcheck.
     healthcheck:
-      disable: true
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      start_interval: 1s
     depends_on:
       migrate:
         condition: service_completed_successfully
