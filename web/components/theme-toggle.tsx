@@ -22,8 +22,7 @@ export function ThemeToggle() {
       apply();
       return;
     }
-    // The new theme sweeps in from the bottom-left corner (globals.css). The
-    // attribute scopes that animation to theme switches only.
+    // A short cross-fade (globals.css); the attribute scopes it to theme switches.
     const root = document.documentElement;
     root.dataset.themeSwitch = "";
     document.startViewTransition(apply).finished.finally(() => {

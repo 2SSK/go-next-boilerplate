@@ -51,9 +51,6 @@
   --duration-quick: 120ms;
   --duration-normal: 220ms;
   --duration-slow: 400ms;
-  /* The theme reveal: long enough to read as a sweep, short enough to not wait on */
-  --duration-theme: 650ms;
-  --ease-in-out-cubic: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 :root {
@@ -193,29 +190,15 @@
   }
 }
 
-/* Theme switch: a short cross-fade instead of a hard cut */
 /*
- * Theme switch: the new theme sweeps in as a circle growing from the bottom-left
- * corner to past the top-right one (components/theme-toggle.tsx). Scoped to
- * theme switches by data-theme-switch; other view transitions are unaffected.
+ * Theme switch: a short cross-fade between the old and new theme
+ * (components/theme-toggle.tsx), scoped by data-theme-switch so other view
+ * transitions are unaffected.
  */
 :root[data-theme-switch]::view-transition-old(root),
 :root[data-theme-switch]::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-:root[data-theme-switch]::view-transition-new(root) {
-  animation: theme-reveal var(--duration-theme) var(--ease-in-out-cubic) both;
-}
-
-@keyframes theme-reveal {
-  from {
-    clip-path: circle(0% at 0% 100%);
-  }
-  to {
-    /* 150% of the reference radius reaches beyond the far corner */
-    clip-path: circle(150% at 0% 100%);
-  }
+  animation-duration: var(--duration-normal);
+  animation-timing-function: var(--ease-out-cubic);
 }
 
 @keyframes rise {
