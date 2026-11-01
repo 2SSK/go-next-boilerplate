@@ -112,7 +112,8 @@ Docker Compose reads it directly.
 
 **One rule:** wrap a value in single quotes if it contains spaces, `#`, `$`, or quotes, for
 example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same value, and
-`make test` proves it with exactly such a password.
+`make test` proves it with exactly such a password. A variable already set in your shell wins
+over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
 
 | Variable                             | Default                                             | Used by      |
 | ------------------------------------ | --------------------------------------------------- | ------------ |
