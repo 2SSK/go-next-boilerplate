@@ -1,17 +1,18 @@
 # go-next-boilerplate
 
-A Go API and a Next.js frontend, wired together. Clone it, run two commands, and start
-building. It ships with a small todo app that shows a full round trip (Next.js → Go →
-Postgres); `make reset` strips that out when you want a blank slate.
+A minimal full-stack starter for Go on the backend and Next.js on the frontend. Clone it, run
+two commands, and start building. It ships with a small todo app that shows the full round trip
+(browser → Next.js → Go → Postgres); `make reset` strips it out when you want a blank slate.
 
-| Layer    | Choice                                                                         |
-| -------- | ------------------------------------------------------------------------------ |
-| API      | Go standard library `net/http` (1.22+ routing), `log/slog`, `pgx` for Postgres |
-| Database | Postgres 17 in Docker, plain `.sql` migrations embedded in the binary          |
-| Web      | Next.js (App Router), shadcn/ui, Tailwind v4, Inter + JetBrains Mono           |
-| Tooling  | Make, Docker Compose, golangci-lint, ESLint, Prettier, GitHub Actions          |
+| Layer    | Choice                                                                            |
+| -------- | --------------------------------------------------------------------------------- |
+| Contract | OpenAPI 3 (`api/openapi.yaml`): Go server and TypeScript types generated from it  |
+| API      | Go standard library `net/http`, `log/slog`, `pgx` for Postgres                    |
+| Database | Postgres 17, plain SQL migrations with checksums, run as a deploy step            |
+| Web      | Next.js (App Router), shadcn/ui, Tailwind v4, Inter + JetBrains Mono              |
+| Tooling  | Make, Docker Compose, golangci-lint, ESLint, Prettier, Playwright, GitHub Actions |
 
-The only Go dependency is `pgx`.
+The Go API has two dependencies: `pgx` and `oapi-codegen/runtime` (used by the generated code).
 
 ## Quick start
 
@@ -21,11 +22,11 @@ Needs Go 1.25+, Node 22+, and Docker.
 gh repo create my-app --template 2SSK/go-next-boilerplate --private --clone
 cd my-app
 make setup   # .env, Go modules, npm install
-make dev     # Postgres + API on :8080 + web on :3000
+make dev     # Postgres, migrations, API on :8080, web on :3000
 ```
 
 Open http://localhost:3000. The status pill on the landing page turns green once the API and
-database answer.
+database answer. The API serves its own docs at http://localhost:8080/docs.
 
 Then make it yours:
 
@@ -38,84 +39,141 @@ make reset                                             # optional: remove the to
 
 Run `make` to list them all. The ones you'll use most:
 
-| Command                 | What it does                                                |
-| ----------------------- | ----------------------------------------------------------- |
-| `make dev`              | Postgres, API, and web together; Ctrl-C stops everything    |
-| `make test`             | Go unit tests with the race detector                        |
-| `make test-integration` | Go tests against the real database                          |
-| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier         |
-| `make check`            | lint + test + build, the same gates CI runs                 |
-| `make up` / `make down` | the whole stack in Docker, production builds                |
-| `make db-shell`         | psql into the dev database                                  |
-| `make db-reset`         | wipe the dev database                                       |
-| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt) |
+| Command                 | What it does                                                         |
+| ----------------------- | -------------------------------------------------------------------- |
+| `make dev`              | Postgres, migrations, API, and web together; Ctrl-C stops everything |
+| `make generate`         | Regenerate the Go server and TypeScript types from the spec          |
+| `make db-migrate`       | Apply pending migrations                                             |
+| `make db-status`        | List applied and pending migrations                                  |
+| `make test`             | Go unit tests (race detector) and the `.env` round-trip test         |
+| `make test-integration` | Go tests against the real database                                   |
+| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier                  |
+| `make check`            | lint + contract check + test + build, the gates CI runs              |
+| `make up` / `make down` | the whole stack in Docker, production builds                         |
+| `make e2e`              | Playwright browser tests against the running stack (`make up` first) |
+| `make db-shell`         | psql into the dev database                                           |
+| `make db-reset`         | wipe the dev database                                                |
+| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt)          |
 
 ## Layout
 
 ```
-cmd/api/              entry point: config, database, server, graceful shutdown
+api/                  the contract: openapi.yaml, and the Go code generated from it
+cmd/api/              entry point: `api` serves HTTP, `api migrate` applies migrations
 internal/
+  router/             mounts the generated routes, the docs, the JSON 404; middleware; http.Server
+  docs/               /openapi.yaml and the interactive /docs page, served by the API
+  handlers/           implement the API operations, one handler per area (system, todo)
+  models/             domain types and rules (Todo, NormalizeTitle, ErrNotFound)
+  store/              Postgres reads and writes, returning models
+  database/           pgx pool and the migrator (migrations/*.sql)
   config/             env vars → Config, with defaults and validation
-  database/           pgx pool + migrator (migrations/*.sql, applied on startup)
-  httpx/              JSON response and request-decoding helpers
-  middleware/         request ID, access log, panic recovery
-  server/             route table, GET / and GET /healthz
-  todo/               the demo feature: model, Postgres store, handlers, tests
+  middleware/         request ID, access log, panic recovery, body limit
+  httpx/              JSON responses outside the generated handlers
 web/
   app/                pages (landing, todos) and globals.css (the design tokens)
   components/         navbar, theme toggle, API status, ui/ (shadcn)
   config/site.ts      app name, description, navbar style, and navigation
-  lib/api.ts          fetch helper for the Go API
-scripts/              reset.sh and rename.sh, run through make
+  lib/api.ts          typed client for the browser; lib/api-server.ts for server components
+  lib/api/schema.ts   TypeScript types generated from the spec
+  e2e/                Playwright tests
+scripts/              with-env, reset, rename, and the .env test; run through make
+docs/                 ROADMAP.md and the architecture decision records (adr/)
 ```
 
 ## How the pieces connect
 
-The browser only talks to Next.js. `next.config.ts` rewrites `/api/*` and `/healthz` to
-`API_URL`, so there is no CORS to configure and the API address lives in one env var.
+**The contract comes first.** `api/openapi.yaml` describes every endpoint. `make generate`
+produces the Go server interface and types (`api/api.gen.go`) and the TypeScript types
+(`web/lib/api/schema.ts`). Handlers implement the generated interface, and the web app calls the
+API through a client typed by the same spec, so a change on one side that the other doesn't
+match fails to compile. CI fails if the committed generated code is out of date.
 
-Configuration is environment variables only. `make setup` copies `.env.example` to `.env`, and
-the Makefile exports it to every command.
+**The browser only talks to Next.js for the app.** `next.config.ts` forwards `/api/*`, `/readyz`
+and `/livez` to `API_URL`, so there is no CORS to configure. Server components call the API
+directly.
 
-| Variable                                            | Default                                          | Used by |
-| --------------------------------------------------- | ------------------------------------------------ | ------- |
-| `APP_ENV`                                           | `development` (text logs) or `production` (JSON) | API     |
-| `PORT`                                              | `8080`                                           | API     |
-| `DATABASE_URL`                                      | `postgres://app:app@localhost:5432/app?...`      | API     |
-| `SHUTDOWN_TIMEOUT`                                  | `10s`, the drain time after SIGTERM              | API     |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `app` / `app` / `app`                            | Compose |
-| `DB_PORT`                                           | `5432`, the host port for compose Postgres       | Compose |
-| `API_URL`                                           | `http://localhost:8080`, read at build time      | Web     |
-| `WEB_PORT`                                          | `3000`                                           | Web     |
+**The API documents itself.** It serves the contract at `/openapi.yaml` and an interactive
+reference at `/docs` (Scalar, loaded from a CDN, with its telemetry and hosted AI turned off).
+These are not proxied through Next.js, so they are reachable exactly where the API is: keep the
+API port internal in production and the docs stay internal too.
 
-`.env.example` explains each one. If port 5432 is already taken, change `DB_PORT` and the port in `DATABASE_URL` together.
+**Errors have one shape:** `{"error": {"code": "not_found", "message": "..."}}`. Branch on `code`;
+`message` is safe to show people.
+
+**Health:** `/livez` says the process is up and never checks dependencies (for restarts).
+`/readyz` also pings the database and answers 503 when it can't (for load balancers).
+
+## Configuration
+
+Environment variables only. `make setup` copies `.env.example` to `.env`, where each one is
+explained. Make never parses `.env` itself; targets load it through `scripts/with-env.sh`, and
+Docker Compose reads it directly.
+
+**One rule:** wrap a value in single quotes if it contains spaces, `#`, `$`, or quotes, for
+example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same value, and
+`make test` proves it with exactly such a password.
+
+| Variable                             | Default                                             | Used by      |
+| ------------------------------------ | --------------------------------------------------- | ------------ |
+| `APP_ENV`                            | `development` (text logs) or `production` (JSON)    | API          |
+| `LOG_LEVEL`                          | `info` in production, `debug` otherwise             | API          |
+| `PORT`                               | `8080`                                              | API          |
+| `SHUTDOWN_TIMEOUT`                   | `10s`, the drain time after SIGTERM                 | API          |
+| `PGHOST`, `PGPORT`                   | `localhost`, `5432` (also the host port in Compose) | API, Compose |
+| `PGUSER`, `PGPASSWORD`, `PGDATABASE` | `app` / `app` / `app`                               | API, Compose |
+| `PGSSLMODE`                          | `disable`                                           | API          |
+| `DATABASE_URL`                       | unset; when set, it wins over the `PG*` values      | API          |
+| `API_URL`                            | `http://localhost:8080`                             | Web          |
+| `WEB_PORT`                           | `3000`                                              | Web          |
+
+The database credentials are the standard libpq variables, written once: the API builds its
+connection from them (escaping any character correctly), Compose creates the database with them,
+and psql reads them as-is. If port 5432 is taken, change `PGPORT` and nothing else.
+
+## Migrations
+
+Plain SQL files in `internal/database/migrations/`, applied in name order. Schema changes are a
+deploy step, never a side effect of starting the server:
+
+- `make db-migrate` (or `api migrate`) applies pending files, each in its own transaction, under
+  an advisory lock so concurrent runs can't collide.
+- The server checks the schema at startup and refuses to run if a migration is pending or an
+  applied file was edited (checksums are recorded).
+- In Docker, a one-shot `migrate` service runs before the API starts.
+- Migrations are forward-only: to undo a change, write a new migration. See
+  `docs/adr/0002-forward-only-migrations.md`.
 
 ## Adding a feature
 
-`internal/todo` is the template. A new resource, say `notes`:
+The todo demo is the template; each layer has one file for it. A new resource, say `notes`:
 
-1. **Migration.** Add `internal/database/migrations/0003_notes.sql`. It runs on the next API
-   start. Files apply in name order, once each, inside a transaction.
-2. **Package.** Copy `internal/todo` to `internal/notes`: a `Store` interface, a Postgres
-   implementation, and a `Handler` with a `Register(mux, prefix)` method. Handler tests use an
+1. **Contract.** Add the paths and schemas to `api/openapi.yaml`, then `make generate`. The Go
+   build now fails until the new operations are implemented, which is the point.
+2. **Migration.** Add `internal/database/migrations/0003_notes.sql`, then `make db-migrate`.
+3. **Model.** `internal/models/note.go`: the domain type and its rules (like `NormalizeTitle`).
+4. **Store.** `internal/store/notes.go`: the Postgres reads and writes, returning models.
+5. **Handler.** `internal/handlers/notes.go`: a `NotesStore` interface and a `NotesHandler`
+   whose methods implement the generated operations. Tests call those methods directly with an
    in-memory store, so they need no database.
-3. **Route.** Add one line in `internal/server/server.go`:
-   `notes.NewHandler(notes.NewPostgresStore(d.DB)).Register(mux, "/api/v1/notes")`.
-4. **Web.** Add `web/lib/notes.ts` (typed calls through `api()`), a page in `web/app/notes/`,
-   and a nav entry in `web/config/site.ts`. For more shadcn components, run
+6. **Wire.** Embed `*NotesHandler` in `Handlers` (`internal/handlers/handlers.go`) and construct
+   it in `router.Routes`. If an operation is missing, the build says which.
+7. **Web.** Add `web/lib/notes.ts` (types from `lib/api/schema.ts`, calls through `api`), a page
+   in `web/app/notes/`, and a nav entry in `web/config/site.ts`. For more shadcn components, run
    `npx shadcn@latest add <name>` in `web/`.
 
 ## How reset works
 
-The demo owns some files outright (`internal/todo/`, its migration, `web/app/todos/`, and so
-on), and adds a few lines of wiring to shared files. Those lines are tagged with a comment:
-either on the same line, or between a begin and an end comment (`feature:todo:begin` and its
-matching `:end`). `scripts/reset.sh` deletes the owned files, deletes the tagged lines, then
-runs gofmt, `go mod tidy`, the build, and Prettier.
+The demo owns some files outright (`todo.go` in models, store and handlers, its migration,
+`web/app/todos/`, its e2e test, and so on) and adds a few lines of wiring to shared files, the spec included. Those lines
+are tagged with a comment: either on the same line, or between a begin and an end comment
+(`feature:todo:begin` and its matching `:end`). `scripts/reset.sh` deletes the owned files and
+the tagged lines, regenerates the Go and TypeScript code from the trimmed spec, then runs gofmt,
+`go mod tidy`, the build, and Prettier.
 
-After a reset you have `GET /`, `GET /healthz`, and the landing page. The `todos` table stays in
-your local database until `make db-reset`. CI runs a reset on every push and builds the result,
-so this path can't silently break.
+After a reset you have `GET /`, `/livez`, `/readyz`, `/docs`, and the landing page. The `todos`
+table stays in your local database until `make db-reset`. CI runs a reset on every push and
+checks the result, so this path can't silently break.
 
 ## Design
 
@@ -128,21 +186,17 @@ The navbar comes in two styles, set by `navbar` in `web/config/site.ts`. `"bar"`
 a full-width sticky bar for platform and infra tools. `"island"` is a floating capsule for
 products and landing pages. Page spacing follows the choice automatically.
 
-The full design system (tokens, type scale, motion, component rules) is in `web/AGENTS.md`.
-
-Helper classes: `container-page` (page column), `page-top` (space below the navbar), `surface` (raised card), `label` (small caps
-heading), `meta` (mono data text), `interactive` (shared transition), `animate-enter`
-(page entrance on a fresh load; stagger it with `animationDelay`), and `animate-rise` (something
-appearing inside a page). After a client navigation the whole page rises in at once, through a
-plain CSS animation that never delays the router.
+The full design system (tokens, type scale, motion, component rules) and the rendering and
+performance rules are in `web/AGENTS.md`.
 
 ## Deploying
 
-`make up` runs the production images locally. The API image (`Dockerfile`) is a static binary on
-Alpine, runs as a non-root user, and has a health check on `/healthz`. The web image
-(`web/Dockerfile`) is Next.js standalone output. Set `APP_ENV=production` and `DATABASE_URL` for
-the API. `API_URL` is read when the web image is **built**, because Next.js resolves rewrites
-at build time, so pass it as a build arg.
+`make up` runs the production images locally; it is a production-like test environment, not a
+deployment (no TLS, no backups, one replica). The API image (`Dockerfile`) is a static binary on
+Alpine, runs as a non-root user, and has a health check on `/livez`. Run `api migrate` as a
+release step (a Kubernetes Job, a Compose one-shot, a platform release command) before starting
+new API versions. The web image (`web/Dockerfile`) is Next.js standalone output; `API_URL` is
+used both at build time (rewrites) and at runtime (server components), so set it in both.
 
 ## License
 

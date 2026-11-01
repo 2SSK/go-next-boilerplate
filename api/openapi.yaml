@@ -1,0 +1,214 @@
+openapi: 3.0.3
+info:
+  title: go-next-boilerplate API
+  version: 1.0.0
+  description: |
+    The contract between the Go API and the Next.js web app. Edit this file first,
+    then run `make generate`: the Go server interface (api/api.gen.go) and the
+    TypeScript types (web/lib/api/schema.ts) are both generated from it.
+
+    Every error response has the same shape: {"error": {"code", "message"}}.
+
+paths:
+  /:
+    get:
+      operationId: getRoot
+      summary: Name of the API and where to look next
+      tags: [system]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Root" }
+
+  /livez:
+    get:
+      operationId: getLivez
+      summary: Liveness. The process is up; dependencies are not checked
+      description: For restart decisions. Never fails because of the database.
+      tags: [system]
+      responses:
+        "200":
+          description: The process is running
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Liveness" }
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness. The API can serve requests, database included
+      description: For load balancers. 503 while the database is unreachable.
+      tags: [system]
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Readiness" }
+
+  # feature:todo:begin
+  /api/v1/todos:
+    get:
+      operationId: listTodos
+      summary: List todos, newest first
+      tags: [todos]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Todo" }
+        "500": { $ref: "#/components/responses/Internal" }
+    post:
+      operationId: createTodo
+      summary: Create a todo
+      tags: [todos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewTodo" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Todo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/v1/todos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    patch:
+      operationId: updateTodo
+      summary: Rename a todo or mark it done
+      tags: [todos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TodoPatch" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Todo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "500": { $ref: "#/components/responses/Internal" }
+    delete:
+      operationId: deleteTodo
+      summary: Delete a todo
+      tags: [todos]
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+  # feature:todo:end
+
+components:
+  responses:
+    BadRequest:
+      description: Malformed request (bad JSON, wrong types, invalid path value)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Well-formed request that breaks a rule
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Internal:
+      description: Unexpected server error; details are logged, never returned
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable. Branch on this, not on the message.
+              enum: [bad_request, not_found, validation_failed, internal, unavailable]
+            message:
+              type: string
+              description: Human-readable, safe to show to people.
+
+    Root:
+      type: object
+      required: [name, docs, readiness]
+      properties:
+        name: { type: string, example: go-next-boilerplate }
+        docs: { type: string, example: /docs }
+        readiness: { type: string, example: /readyz }
+
+    Liveness:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+
+    Readiness:
+      type: object
+      required: [status, database]
+      properties:
+        status: { type: string, enum: [ok, unavailable] }
+        database: { type: string, enum: [up, down] }
+
+    # feature:todo:begin
+    Todo:
+      type: object
+      required: [id, title, completed, createdAt, updatedAt]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        completed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    NewTodo:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Surrounding whitespace is trimmed before the length check.
+
+    TodoPatch:
+      type: object
+      description: Send at least one field; omitted fields are left unchanged.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        completed: { type: boolean }
+    # feature:todo:end

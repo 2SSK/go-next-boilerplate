@@ -1,34 +1,36 @@
 //go:build integration
 
-package todo_test
+package store_test
 
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
-	"os"
 	"testing"
 
+	"github.com/2SSK/go-next-boilerplate/internal/config"
 	"github.com/2SSK/go-next-boilerplate/internal/database"
-	"github.com/2SSK/go-next-boilerplate/internal/todo"
+	"github.com/2SSK/go-next-boilerplate/internal/models"
+	"github.com/2SSK/go-next-boilerplate/internal/store"
 )
 
-// Runs against DATABASE_URL (make db-up first): go test -tags integration ./...
-func TestPostgresStore(t *testing.T) {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		url = "postgres://app:app@localhost:5432/app?sslmode=disable"
-	}
+// Runs against the database from the environment (make db-up first):
+// go test -tags integration ./...
+func TestTodos(t *testing.T) {
 	ctx := context.Background()
-
-	db, err := database.Open(ctx, url, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	db, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		t.Skipf("database unavailable: %v", err)
 	}
 	defer db.Close()
+	if _, err := database.Migrate(ctx, db, database.Migrations()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 
-	s := todo.NewPostgresStore(db)
+	s := store.NewTodos(db)
 
 	created, err := s.Create(ctx, "integration test")
 	if err != nil {
@@ -37,7 +39,7 @@ func TestPostgresStore(t *testing.T) {
 	t.Cleanup(func() { _ = s.Delete(context.Background(), created.ID) })
 
 	done := true
-	updated, err := s.Update(ctx, created.ID, todo.Patch{Completed: &done})
+	updated, err := s.Update(ctx, created.ID, models.TodoPatch{Completed: &done})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -56,7 +58,7 @@ func TestPostgresStore(t *testing.T) {
 	if err := s.Delete(ctx, created.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := s.Update(ctx, created.ID, todo.Patch{Completed: &done}); !errors.Is(err, todo.ErrNotFound) {
+	if _, err := s.Update(ctx, created.ID, models.TodoPatch{Completed: &done}); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("Update after delete = %v, want ErrNotFound", err)
 	}
 }

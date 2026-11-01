@@ -19,7 +19,8 @@ TITLE=$(echo "$NAME" | sed -E 's/-/ /g; s/\b(.)/\u\1/g')
 go mod edit -module "$MODULE"
 grep -rl --include='*.go' "\"$OLD_MODULE/" cmd internal | xargs -r sed -i "s#\"$OLD_MODULE/#\"$MODULE/#g"
 
-sed -i -E "s/^const AppName = \".*\"/const AppName = \"$NAME\"/" internal/server/server.go
+sed -i -E "s/^const AppName = \".*\"/const AppName = \"$NAME\"/" internal/router/router.go
+sed -i -E "s/^  title: .* API$/  title: $NAME API/" api/openapi.yaml
 sed -i -E "s/^name: .*/name: $NAME/" docker-compose.yml
 sed -i "s|- ${OLD_MODULE}\$|- ${MODULE}|" .golangci.yml
 sed -i -E "0,/name: \".*\",/s//name: \"$TITLE\",/" web/config/site.ts

@@ -1,0 +1,14 @@
+# Generates api.gen.go from openapi.yaml. Run `make generate`.
+package: api
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+compatibility:
+  # Name enum constants Type+Value (ReadinessDatabaseUp), never a bare "Up".
+  always-prefix-enum-values: true
+output-options:
+  # Keep every schema, even ones no path references yet. Error must exist for the
+  # middleware and the 404 fallback even when no feature uses it (after `make reset`).
+  skip-prune: true

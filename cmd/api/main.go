@@ -1,53 +1,91 @@
-// Command api runs the HTTP API.
+// Command api runs the HTTP API, or applies database migrations.
+//
+//	api                  serve HTTP (the default; same as `api serve`)
+//	api migrate          apply pending migrations, then exit
+//	api migrate -status  list applied and pending migrations, then exit
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
+	"text/tabwriter"
 
 	"github.com/2SSK/go-next-boilerplate/internal/config"
 	"github.com/2SSK/go-next-boilerplate/internal/database"
 	"github.com/2SSK/go-next-boilerplate/internal/logger"
-	"github.com/2SSK/go-next-boilerplate/internal/server"
+	"github.com/2SSK/go-next-boilerplate/internal/router"
 )
 
+// version is set at build time (-ldflags "-X main.version=..."); otherwise it
+// comes from the VCS stamp Go records in the binary, or "dev".
+var version string
+
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		slog.Error("fatal", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-
-	log := logger.New(cfg.Env, os.Stdout)
+	log := logger.New(logger.Options{
+		Env:     cfg.Env,
+		Level:   cfg.LogLevel,
+		Service: router.AppName,
+		Version: buildVersion(),
+	}, os.Stdout)
+	// Also routes the standard library's log package through this logger.
 	slog.SetDefault(log)
 
 	// ctx is cancelled on SIGINT/SIGTERM, which starts the graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := database.Open(ctx, cfg.DatabaseURL, log)
+	cmd := "serve"
+	if len(args) > 0 {
+		cmd, args = args[0], args[1:]
+	}
+	switch cmd {
+	case "serve":
+		return serve(ctx, cfg, log)
+	case "migrate":
+		return migrate(ctx, cfg, log, args)
+	default:
+		return fmt.Errorf("unknown command %q (want serve or migrate)", cmd)
+	}
+}
+
+func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	db, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
-	srv := server.New(cfg.Port, server.Routes(server.Deps{Log: log, DB: db}))
+	// The server never changes the schema; it refuses to run against one that
+	// is behind or has been tampered with.
+	if err := database.CheckCurrent(ctx, db, database.Migrations()); err != nil {
+		return fmt.Errorf("%w; run `make db-migrate` (or `api migrate`) first", err)
+	}
+
+	srv := router.New(cfg.Port, router.Routes(router.Deps{Log: log, DB: db}))
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", srv.Addr, "env", cfg.Env)
+		log.Info("listening", "addr", srv.Addr)
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -66,4 +104,78 @@ func run() error {
 	}
 	log.Info("shutdown complete")
 	return nil
+}
+
+func migrate(ctx context.Context, cfg config.Config, log *slog.Logger, args []string) error {
+	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	status := flags.Bool("status", false, "list applied and pending migrations without changing anything")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	if *status {
+		p, err := database.Status(ctx, db, database.Migrations())
+		if err != nil {
+			return err
+		}
+		return printStatus(os.Stdout, p)
+	}
+
+	applied, err := database.Migrate(ctx, db, database.Migrations())
+	for _, m := range applied {
+		log.Info("applied migration", "version", m.Version)
+	}
+	if err != nil {
+		return err
+	}
+	if len(applied) == 0 {
+		log.Info("schema already current")
+	}
+	return nil
+}
+
+func printStatus(w io.Writer, p database.Plan) error {
+	// tabwriter buffers every row and writes on Flush, so a write error
+	// surfaces there; the per-row returns carry nothing to check.
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "VERSION\tSTATE")
+	for _, a := range p.Applied {
+		_, _ = fmt.Fprintf(tw, "%s\tapplied %s\n", a.Version, a.AppliedAt.Format("2006-01-02 15:04:05"))
+	}
+	for _, m := range p.Pending {
+		_, _ = fmt.Fprintf(tw, "%s\tpending\n", m.Version)
+	}
+	return tw.Flush()
+}
+
+// buildVersion reports the release this binary was built from.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	var rev, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if len(rev) >= 12 {
+		return rev[:12] + dirty
+	}
+	return "dev"
 }

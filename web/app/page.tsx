@@ -10,7 +10,9 @@ function rise(step: number): React.CSSProperties {
 
 const ENDPOINTS = [
   { method: "GET", path: "/", note: "API name and links" },
-  { method: "GET", path: "/healthz", note: "Liveness + database ping" },
+  { method: "GET", path: "/livez", note: "Liveness: the process is up" },
+  { method: "GET", path: "/readyz", note: "Readiness: database included" },
+  { method: "GET", path: "/docs", note: "Interactive docs, served by the API" },
   // feature:todo:begin
   { method: "GET", path: "/api/v1/todos", note: "List todos" },
   { method: "POST", path: "/api/v1/todos", note: "Create a todo" },

@@ -28,32 +28,36 @@ Next.js App Router, React 19, TypeScript (strict), Tailwind v4, shadcn/ui on Bas
 
 ## Layout
 
-| Path                    | Holds                                                                 |
-| ----------------------- | --------------------------------------------------------------------- |
-| `app/globals.css`       | Every design token and the shared helper classes. Styling starts here |
-| `postcss.config.mjs`    | Tailwind v4 via `@tailwindcss/postcss`, the setup Next.js documents   |
-| `app/layout.tsx`        | Fonts, theme provider, navbar, footer: everything shared by pages     |
-| `config/site.ts`        | App name, description, repo link, navbar style, navigation            |
-| `components/ui/`        | shadcn components. Add with `npx shadcn@latest add <name>`            |
-| `components/`           | App components, kebab-case files (`api-status.tsx`)                   |
-| `components/navbar.tsx` | Server-rendered navbar; `nav-links.tsx` is its only client part       |
-| `components/<feature>/` | Components owned by one feature                                       |
-| `lib/api.ts`            | Browser `api<T>()`, `ApiError`, `errorMessage()`                      |
-| `lib/api-server.ts`     | Server-only `serverApi<T>()` for server components                    |
-| `lib/api-url.ts`        | `API_URL`, shared by `next.config.ts` and `serverApi()`               |
-| `lib/<feature>.ts`      | Typed API calls and types for one feature                             |
+| Path                    | Holds                                                                    |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `app/globals.css`       | Every design token and the shared helper classes. Styling starts here    |
+| `postcss.config.mjs`    | Tailwind v4 via `@tailwindcss/postcss`, the setup Next.js documents      |
+| `app/layout.tsx`        | Fonts, theme provider, navbar, footer: everything shared by pages        |
+| `config/site.ts`        | App name, description, repo link, navbar style, navigation               |
+| `components/ui/`        | shadcn components. Add with `npx shadcn@latest add <name>`               |
+| `components/`           | App components, kebab-case files (`api-status.tsx`)                      |
+| `components/navbar.tsx` | Server-rendered navbar; `nav-links.tsx` is its only client part          |
+| `components/<feature>/` | Components owned by one feature                                          |
+| `lib/api/schema.ts`     | Types generated from `../api/openapi.yaml` (`make generate`); never edit |
+| `lib/api.ts`            | Browser client `api`, `unwrap()`, `ApiError`, `errorMessage()`           |
+| `lib/api-server.ts`     | Server-only client `serverApi` for server components                     |
+| `lib/api-url.ts`        | `API_URL`, shared by `next.config.ts` and `serverApi()`                  |
+| `lib/<feature>.ts`      | One feature's types (from the schema) and browser-side calls             |
+| `e2e/`                  | Playwright tests against the running stack (`make up`, `make e2e`)       |
 
 ## Conventions
 
 - **Server components by default.** Add `"use client"` only to the component that needs state,
   effects, or browser APIs, and keep that boundary as low in the tree as you can.
-- **API calls.** Server components use `serverApi()` (`lib/api-server.ts`). Client components
-  use `api()` (`lib/api.ts`) with same-origin paths (`/api/v1/...`), which `next.config.ts`
-  forwards to `API_URL`. Never hard-code the API host. Each feature gets a `lib/<feature>.ts`
-  with its types (mirroring the Go JSON exactly, camelCase fields), its path constant, and its
-  browser-side calls.
-- **Errors.** `api()` throws `ApiError` carrying the server's `error` message and status. Show
-  it in the UI (`role="alert"`); don't swallow it.
+- **API calls are typed by the contract.** Types come from `lib/api/schema.ts`, generated from
+  `api/openapi.yaml`; never hand-write a type the API already defines (`type Todo =
+components["schemas"]["Todo"]`). Server components call `serverApi.GET(...)`; client
+  components call `api.POST(...)` and friends with same-origin paths, which `next.config.ts`
+  forwards to `API_URL`. Wrap calls in `unwrap()` to get the data or a thrown `ApiError`. Never
+  hard-code the API host. An endpoint that doesn't exist in the spec is a type error.
+- **Errors.** `unwrap()` throws `ApiError` with the server's message, status, and `code` (the
+  contract's machine-readable reason). Branch on `code`, show `message` in the UI
+  (`role="alert"`), and never swallow it.
 - **Mutations.** Update local state first and roll back if the request fails (see
   `components/todos/todo-list.tsx`). Creates wait for the server, because the server assigns the ID.
 - **Types.** No `any`. Use `interface` for object shapes, `type` for unions. Props are

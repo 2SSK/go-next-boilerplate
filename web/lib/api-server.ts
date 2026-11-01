@@ -1,16 +1,11 @@
 import "server-only";
+import createClient from "openapi-fetch";
+import type { paths } from "./api/schema";
 import { API_URL } from "./api-url";
-import { parseResponse } from "./api";
 
 /**
- * Calls the API from a server component, straight to API_URL with no browser round trip.
- * The result is uncached, so render the caller inside <Suspense>: the page's static shell
- * ships at once and this data streams in behind the fallback.
+ * Calls the API from a server component, straight to API_URL with no browser round
+ * trip. Results are uncached, so render the caller inside <Suspense>: the page's
+ * static shell ships at once and this data streams in behind the fallback.
  */
-export async function serverApi<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  return parseResponse<T>(res);
-}
+export const serverApi = createClient<paths>({ baseUrl: API_URL });

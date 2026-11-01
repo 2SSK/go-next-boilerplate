@@ -1,23 +1,15 @@
-import { api } from "./api";
+import { api, unwrap } from "./api";
+import type { components } from "./api/schema";
 
-/** Mirrors todo.Todo in internal/todo/todo.go. */
-export interface Todo {
-  id: number;
-  title: string;
-  completed: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type TodoPatch = Partial<Pick<Todo, "title" | "completed">>;
-
-export const TODOS_PATH = "/api/v1/todos";
+/** Generated from the Todo schema in api/openapi.yaml; never edit by hand. */
+export type Todo = components["schemas"]["Todo"];
+export type TodoPatch = components["schemas"]["TodoPatch"];
 
 /** Browser-side mutations. The page loads the list on the server (app/todos/page.tsx). */
 export const todos = {
-  create: (title: string): Promise<Todo> =>
-    api<Todo>(TODOS_PATH, { method: "POST", body: JSON.stringify({ title }) }),
+  create: (title: string): Promise<Todo> => unwrap(api.POST("/api/v1/todos", { body: { title } })),
   update: (id: number, patch: TodoPatch): Promise<Todo> =>
-    api<Todo>(`${TODOS_PATH}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  remove: (id: number): Promise<void> => api<void>(`${TODOS_PATH}/${id}`, { method: "DELETE" }),
+    unwrap(api.PATCH("/api/v1/todos/{id}", { params: { path: { id } }, body: patch })),
+  remove: (id: number): Promise<void> =>
+    unwrap(api.DELETE("/api/v1/todos/{id}", { params: { path: { id } } })).then(() => undefined),
 };

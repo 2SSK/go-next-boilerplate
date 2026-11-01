@@ -28,6 +28,7 @@ func TestLoad(t *testing.T) {
 		{"rejects unknown env", "APP_ENV", "staging"},
 		{"rejects non-numeric port", "PORT", "http"},
 		{"rejects bad duration", "SHUTDOWN_TIMEOUT", "ten"},
+		{"rejects unknown log level", "LOG_LEVEL", "loud"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

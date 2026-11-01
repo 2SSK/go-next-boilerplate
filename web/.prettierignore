@@ -1,3 +1,4 @@
 .next
 node_modules
 components/ui
+lib/api/schema.ts

@@ -1,0 +1,100 @@
+package handlers
+
+import (
+	"context"
+	"errors"
+
+	"github.com/2SSK/go-next-boilerplate/api"
+	"github.com/2SSK/go-next-boilerplate/internal/models"
+)
+
+// TodoStore is the storage TodoHandler needs; store.Todos implements it and
+// tests use an in-memory fake.
+type TodoStore interface {
+	List(ctx context.Context) ([]models.Todo, error)
+	Create(ctx context.Context, title string) (models.Todo, error)
+	Update(ctx context.Context, id int64, p models.TodoPatch) (models.Todo, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// TodoHandler implements the todo operations.
+type TodoHandler struct {
+	store TodoStore
+}
+
+// NewTodoHandler returns a TodoHandler backed by store.
+func NewTodoHandler(store TodoStore) *TodoHandler {
+	return &TodoHandler{store: store}
+}
+
+// ListTodos implements GET /api/v1/todos.
+func (h *TodoHandler) ListTodos(ctx context.Context, _ api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
+	todos, err := h.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(api.ListTodos200JSONResponse, len(todos))
+	for i, t := range todos {
+		out[i] = todoToAPI(t)
+	}
+	return out, nil
+}
+
+// CreateTodo implements POST /api/v1/todos.
+func (h *TodoHandler) CreateTodo(ctx context.Context, req api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
+	title, err := models.NormalizeTitle(req.Body.Title)
+	if err != nil {
+		return api.CreateTodo422JSONResponse{ValidationFailedJSONResponse: api.NewValidationFailed(err.Error())}, nil
+	}
+	t, err := h.store.Create(ctx, title)
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateTodo201JSONResponse(todoToAPI(t)), nil
+}
+
+// UpdateTodo implements PATCH /api/v1/todos/{id}.
+func (h *TodoHandler) UpdateTodo(ctx context.Context, req api.UpdateTodoRequestObject) (api.UpdateTodoResponseObject, error) {
+	if req.Id < 1 {
+		return api.UpdateTodo400JSONResponse{BadRequestJSONResponse: api.NewBadRequest("id must be a positive integer")}, nil
+	}
+	p := models.TodoPatch{Title: req.Body.Title, Completed: req.Body.Completed}
+	if p.Title == nil && p.Completed == nil {
+		return api.UpdateTodo422JSONResponse{ValidationFailedJSONResponse: api.NewValidationFailed("nothing to update: send title or completed")}, nil
+	}
+	if p.Title != nil {
+		title, err := models.NormalizeTitle(*p.Title)
+		if err != nil {
+			return api.UpdateTodo422JSONResponse{ValidationFailedJSONResponse: api.NewValidationFailed(err.Error())}, nil
+		}
+		p.Title = &title
+	}
+
+	t, err := h.store.Update(ctx, req.Id, p)
+	if errors.Is(err, models.ErrNotFound) {
+		return api.UpdateTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return api.UpdateTodo200JSONResponse(todoToAPI(t)), nil
+}
+
+// DeleteTodo implements DELETE /api/v1/todos/{id}.
+func (h *TodoHandler) DeleteTodo(ctx context.Context, req api.DeleteTodoRequestObject) (api.DeleteTodoResponseObject, error) {
+	if req.Id < 1 {
+		return api.DeleteTodo400JSONResponse{BadRequestJSONResponse: api.NewBadRequest("id must be a positive integer")}, nil
+	}
+	err := h.store.Delete(ctx, req.Id)
+	if errors.Is(err, models.ErrNotFound) {
+		return api.DeleteTodo404JSONResponse{NotFoundJSONResponse: api.NewNotFound("todo not found")}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return api.DeleteTodo204Response{}, nil
+}
+
+func todoToAPI(t models.Todo) api.Todo {
+	return api.Todo{Id: t.ID, Title: t.Title, Completed: t.Completed, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
+}

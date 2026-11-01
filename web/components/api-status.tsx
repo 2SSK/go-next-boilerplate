@@ -8,7 +8,7 @@ type Status = { state: "checking" } | { state: "up"; ms: number } | { state: "do
 const POLL_MS = 10_000;
 
 /**
- * A live pill showing whether the Go API (and its database) answers /healthz. It polls
+ * A live pill showing whether the Go API (and its database) answers /readyz. It polls
  * only while visible: a hidden tab, or a route Next.js keeps hidden after navigating away
  * (effects are cleaned up then), sends no requests.
  */
@@ -22,7 +22,7 @@ export function ApiStatus() {
       const start = performance.now();
       let next: Status;
       try {
-        const res = await fetch("/healthz", { cache: "no-store" });
+        const res = await fetch("/readyz", { cache: "no-store" });
         next = res.ok
           ? { state: "up", ms: Math.round(performance.now() - start) }
           : { state: "down" };

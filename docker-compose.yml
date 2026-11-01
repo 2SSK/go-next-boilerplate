@@ -1,4 +1,6 @@
 # Local stack. `make db-up` starts only Postgres; `make up` builds everything.
+# This runs production builds on one machine for testing; it is not a production
+# deployment (no TLS, no backups, one replica, secrets from .env).
 name: go-next-boilerplate
 
 services:
@@ -6,11 +8,11 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${PGUSER:-app}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-app}
+      POSTGRES_DB: ${PGDATABASE:-app}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${PGPORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,16 +21,44 @@ services:
       timeout: 3s
       retries: 30
 
-  api:
+  # Applies migrations once, then exits; the api starts only if it succeeds.
+  migrate:
     build: .
-    environment:
-      APP_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-app}?sslmode=disable
-    ports:
-      - "${PORT:-8080}:8080"
+    command: ["migrate"]
+    environment: &db-env
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${PGUSER:-app}
+      PGPASSWORD: ${PGPASSWORD:-app}
+      PGDATABASE: ${PGDATABASE:-app}
+      PGSSLMODE: disable
     depends_on:
       db:
         condition: service_healthy
+    profiles: [full]
+
+  api:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      APP_ENV: production
+    ports:
+      - "${PORT:-8080}:8080"
+    # Probe every second while starting, then every 10s; the image's own
+    # HEALTHCHECK would wait 30s before the first probe.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/livez"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      start_interval: 1s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     profiles: [full]
 
   web:
@@ -36,12 +66,21 @@ services:
       context: ./web
       args:
         API_URL: http://api:8080
+    restart: unless-stopped
     environment:
       API_URL: http://api:8080
     ports:
       - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 here, and Next listens on IPv4 only
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      start_interval: 1s
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     profiles: [full]
 
 volumes:

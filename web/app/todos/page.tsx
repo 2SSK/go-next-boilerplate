@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { TodoList, TodoListSkeleton } from "@/components/todos/todo-list";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, unwrap } from "@/lib/api";
 import { serverApi } from "@/lib/api-server";
-import { type Todo, TODOS_PATH } from "@/lib/todos";
+import type { Todo } from "@/lib/todos";
 
 export const metadata: Metadata = { title: "Todos" };
 
@@ -42,7 +42,7 @@ async function Todos() {
 /** Fetch only; a failed load becomes an inline error, not a broken page. */
 async function loadTodos(): Promise<{ todos: Todo[]; error?: string }> {
   try {
-    return { todos: await serverApi<Todo[]>(TODOS_PATH) };
+    return { todos: await unwrap(serverApi.GET("/api/v1/todos")) };
   } catch (err) {
     return { todos: [], error: errorMessage(err) };
   }

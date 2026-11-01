@@ -24,14 +24,19 @@ jobs:
           --health-cmd "pg_isready -U app -d app"
           --health-interval 2s --health-timeout 3s --health-retries 30
     env:
-      DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: app
+      PGPASSWORD: app
+      PGDATABASE: app
+      PGSSLMODE: disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt
-        run: test -z "$(gofmt -l cmd internal)" || (gofmt -l cmd internal; exit 1)
+        run: test -z "$(gofmt -l cmd internal api)" || (gofmt -l cmd internal api; exit 1)
       - run: go vet ./...
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -39,6 +44,24 @@ jobs:
       - name: test (unit + integration)
         run: go test -race -tags integration -coverpkg=./internal/... -coverprofile=coverage.out ./...
       - run: go build ./cmd/api
+      - name: .env reaches every reader unchanged
+        run: ./scripts/test-env.sh
+
+  # The committed Go server and TypeScript types must match api/openapi.yaml.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci
+      - run: make generate-check
 
   web:
     runs-on: ubuntu-latest
@@ -57,6 +80,33 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm run build
+
+  # The real thing: browser → Next.js → Go → Postgres, on the production images.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci
+      - run: make up
+        env:
+          VERSION: ${{ github.sha }}
+      - run: cd web && npx playwright install --with-deps chromium
+      - run: make e2e
+      - if: failure()
+        run: docker compose --profile full logs
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
+      - if: always()
+        run: make down
 
   # Proves `make reset` still produces a clean, building base app.
   reset:

@@ -9,12 +9,13 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // Memoizes components and hooks at build time; no hand-written useMemo/useCallback.
   reactCompiler: true,
-  // The browser only talks to Next.js; these forward to the Go API.
+  // The browser only talks to Next.js for the app; these forward to the Go API.
+  // The API's docs (/docs, /openapi.yaml) are served by the API itself, not proxied.
   async rewrites() {
-    return [
-      { source: "/api/:path*", destination: `${API_URL}/api/:path*` },
-      { source: "/healthz", destination: `${API_URL}/healthz` },
-    ];
+    return ["/api/:path*", "/readyz", "/livez"].map((source) => ({
+      source,
+      destination: `${API_URL}${source}`,
+    }));
   },
 };
 
