@@ -23,7 +23,7 @@ func TestGetReadyz(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewSystemHandler("test", fakePinger{tt.pingErr}).GetReadyz(context.Background(), api.GetReadyzRequestObject{})
+			got, err := NewSystemHandler("test", fakePinger{tt.pingErr}, "").GetReadyz(context.Background(), api.GetReadyzRequestObject{})
 			if err != nil || got != tt.want {
 				t.Errorf("GetReadyz = %#v, %v; want %#v", got, err, tt.want)
 			}
@@ -32,8 +32,18 @@ func TestGetReadyz(t *testing.T) {
 }
 
 func TestGetLivezIgnoresTheDatabase(t *testing.T) {
-	got, err := NewSystemHandler("test", fakePinger{errors.New("down")}).GetLivez(context.Background(), api.GetLivezRequestObject{})
+	got, err := NewSystemHandler("test", fakePinger{errors.New("down")}, "").GetLivez(context.Background(), api.GetLivezRequestObject{})
 	if err != nil || got != (api.GetLivez200JSONResponse{Status: api.LivenessStatusOk}) {
 		t.Errorf("GetLivez = %#v, %v; want ok even with the database down", got, err)
+	}
+}
+
+func TestGetRootLinksDocsOnlyWhenServed(t *testing.T) {
+	for _, docs := range []string{"/docs", ""} {
+		got, _ := NewSystemHandler("svc", fakePinger{}, docs).GetRoot(context.Background(), api.GetRootRequestObject{})
+		r := got.(api.GetRoot200JSONResponse)
+		if (r.Docs != nil) != (docs != "") || (r.Docs != nil && *r.Docs != docs) {
+			t.Errorf("docs %q: root reports %v", docs, r.Docs)
+		}
 	}
 }

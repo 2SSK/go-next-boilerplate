@@ -136,8 +136,10 @@ type ReadinessStatus string
 
 // Root defines model for Root.
 type Root struct {
-	// Docs Example: /docs
-	Docs string `json:"docs"`
+	// Docs Absent when the docs are turned off (DOCS_ENABLED=false).
+	//
+	// Example: /docs
+	Docs *string `json:"docs,omitempty"`
 
 	// Name Example: go-next-boilerplate
 	Name string `json:"name"`

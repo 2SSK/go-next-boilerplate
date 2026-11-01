@@ -1,0 +1,33 @@
+# Weekly dependency updates. Minor and patch versions arrive grouped in one PR per
+# ecosystem; major versions come one PR each, since they're the ones that break.
+# CI (including the contract check) vets every PR: an oapi-codegen bump that
+# changes generated code fails until `make generate` is run and committed.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      go:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    groups:
+      web:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories: [/, /web]
+    schedule: { interval: weekly }
+    groups:
+      images:
+        update-types: [minor, patch]

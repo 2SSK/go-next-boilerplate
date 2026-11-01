@@ -81,7 +81,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("%w; run `make db-migrate` (or `api migrate`) first", err)
 	}
 
-	srv := router.New(cfg.Port, router.Routes(router.Deps{Log: log, DB: db}))
+	srv := router.New(cfg.Port, router.Routes(router.Deps{Log: log, DB: db, DocsEnabled: cfg.DocsEnabled}))
 
 	errCh := make(chan error, 1)
 	go func() {

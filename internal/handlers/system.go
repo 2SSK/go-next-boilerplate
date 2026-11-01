@@ -14,18 +14,24 @@ type Pinger interface {
 
 // SystemHandler implements the API's own operations: GET /, /livez, /readyz.
 type SystemHandler struct {
-	name string
-	db   Pinger
+	name     string
+	db       Pinger
+	docsPath string // "" when the docs are turned off
 }
 
-// NewSystemHandler returns a SystemHandler reporting name and checking db.
-func NewSystemHandler(name string, db Pinger) *SystemHandler {
-	return &SystemHandler{name: name, db: db}
+// NewSystemHandler returns a SystemHandler reporting name, checking db, and
+// pointing at docsPath (pass "" when the docs are off).
+func NewSystemHandler(name string, db Pinger, docsPath string) *SystemHandler {
+	return &SystemHandler{name: name, db: db, docsPath: docsPath}
 }
 
 // GetRoot names the API and points at the docs, so a bare curl explains it.
 func (s *SystemHandler) GetRoot(context.Context, api.GetRootRequestObject) (api.GetRootResponseObject, error) {
-	return api.GetRoot200JSONResponse{Name: s.name, Docs: "/docs", Readiness: "/readyz"}, nil
+	resp := api.GetRoot200JSONResponse{Name: s.name, Readiness: "/readyz"}
+	if s.docsPath != "" {
+		resp.Docs = &s.docsPath
+	}
+	return resp, nil
 }
 
 // GetLivez says the process is running. It checks nothing else, so a database

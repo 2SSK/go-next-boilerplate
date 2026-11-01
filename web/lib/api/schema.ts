@@ -117,8 +117,11 @@ export interface components {
         Root: {
             /** @example go-next-boilerplate */
             name: string;
-            /** @example /docs */
-            docs: string;
+            /**
+             * @description Absent when the docs are turned off (DOCS_ENABLED=false).
+             * @example /docs
+             */
+            docs?: string;
             /** @example /readyz */
             readiness: string;
         };

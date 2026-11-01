@@ -149,3 +149,18 @@ func BodyLimit(n int64) Middleware {
 		})
 	}
 }
+
+// SecurityHeaders sets the browser protections every API response should
+// carry. Responses are JSON, so the policy denies everything; a handler that
+// serves a page (the docs) sets its own Content-Security-Policy instead.
+// HSTS is left to whatever terminates TLS in front of the API.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
+}

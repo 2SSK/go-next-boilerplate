@@ -29,6 +29,7 @@ func TestLoad(t *testing.T) {
 		{"rejects non-numeric port", "PORT", "http"},
 		{"rejects bad duration", "SHUTDOWN_TIMEOUT", "ten"},
 		{"rejects unknown log level", "LOG_LEVEL", "loud"},
+		{"rejects a non-boolean DOCS_ENABLED", "DOCS_ENABLED", "sometimes"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

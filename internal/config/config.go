@@ -23,6 +23,9 @@ type Config struct {
 	// DatabaseURL is DATABASE_URL when set, otherwise built from the libpq
 	// variables (PGHOST, PGUSER, PGPASSWORD, ...). See databaseURL.
 	DatabaseURL string
+	// DocsEnabled serves /docs and /openapi.yaml (DOCS_ENABLED, default true).
+	// Turn it off where the API port is public and the docs shouldn't be.
+	DocsEnabled bool
 	// ShutdownTimeout bounds how long in-flight requests may drain on SIGTERM.
 	ShutdownTimeout time.Duration
 }
@@ -51,6 +54,12 @@ func Load() (Config, error) {
 	}
 	cfg.Port = port
 
+	docs, err := getEnvBool("DOCS_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.DocsEnabled = docs
+
 	timeout, err := getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return Config{}, err
@@ -77,6 +86,18 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("invalid %s %q: must be an integer", key, v)
 	}
 	return n, nil
+}
+
+func getEnvBool(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s %q: must be true or false", key, v)
+	}
+	return b, nil
 }
 
 func getEnvDuration(key string, fallback time.Duration) (time.Duration, error) {

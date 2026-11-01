@@ -93,6 +93,9 @@ Run everything through the Makefile; `make` lists the targets.
   request bodies or credentials; keys containing password, secret, token, authorization,
   cookie, or api_key are redacted anyway, but don't rely on that. `debug` is for detail you'd
   only want while investigating; `LOG_LEVEL` turns it on without a rebuild.
+- **Security headers.** `middleware.SecurityHeaders` covers every API response. A handler that
+  serves HTML sets its own Content-Security-Policy, allowing inline scripts by hash only (see
+  `internal/docs`). Loosening the web policy in `next.config.ts` needs a stated reason.
 - **Context.** Pass the handler's `ctx` to every store call. Never use `context.Background()`
   in a request path.
 - **Migrations.** Add a new numbered file; never edit one that has shipped (checksums catch it,

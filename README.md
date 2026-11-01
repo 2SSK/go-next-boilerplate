@@ -96,7 +96,14 @@ directly.
 **The API documents itself.** It serves the contract at `/openapi.yaml` and an interactive
 reference at `/docs` (Scalar, loaded from a CDN, with its telemetry and hosted AI turned off).
 These are not proxied through Next.js, so they are reachable exactly where the API is: keep the
-API port internal in production and the docs stay internal too.
+API port internal in production and the docs stay internal too, or set `DOCS_ENABLED=false`.
+
+**Security headers.** Every API response carries `nosniff`, `DENY` framing, `no-referrer`, and a
+Content-Security-Policy that blocks everything (it's JSON); the docs page sets a strict policy
+of its own that allows only Scalar's script and its init script, by hash. Every web page gets a
+static Content-Security-Policy and the usual hardening headers from `next.config.ts`. The web
+policy allows inline scripts: the strict alternative, nonces, would force every page to render
+per request and discard the static shells. HTTPS and HSTS belong to whatever terminates TLS.
 
 **Errors have one shape:** `{"error": {"code": "not_found", "message": "..."}}`. Branch on `code`;
 `message` is safe to show people.
@@ -115,18 +122,19 @@ example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same val
 `make test` proves it with exactly such a password. A variable already set in your shell wins
 over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
 
-| Variable                             | Default                                             | Used by      |
-| ------------------------------------ | --------------------------------------------------- | ------------ |
-| `APP_ENV`                            | `development` (text logs) or `production` (JSON)    | API          |
-| `LOG_LEVEL`                          | `info` in production, `debug` otherwise             | API          |
-| `PORT`                               | `8080`                                              | API          |
-| `SHUTDOWN_TIMEOUT`                   | `10s`, the drain time after SIGTERM                 | API          |
-| `PGHOST`, `PGPORT`                   | `localhost`, `5432` (also the host port in Compose) | API, Compose |
-| `PGUSER`, `PGPASSWORD`, `PGDATABASE` | `app` / `app` / `app`                               | API, Compose |
-| `PGSSLMODE`                          | `disable`                                           | API          |
-| `DATABASE_URL`                       | unset; when set, it wins over the `PG*` values      | API          |
-| `API_URL`                            | `http://localhost:8080`                             | Web          |
-| `WEB_PORT`                           | `3000`                                              | Web          |
+| Variable                             | Default                                               | Used by      |
+| ------------------------------------ | ----------------------------------------------------- | ------------ |
+| `APP_ENV`                            | `development` (text logs) or `production` (JSON)      | API          |
+| `LOG_LEVEL`                          | `info` in production, `debug` otherwise               | API          |
+| `DOCS_ENABLED`                       | `true`; `false` turns off `/docs` and `/openapi.yaml` | API          |
+| `PORT`                               | `8080`                                                | API          |
+| `SHUTDOWN_TIMEOUT`                   | `10s`, the drain time after SIGTERM                   | API          |
+| `PGHOST`, `PGPORT`                   | `localhost`, `5432` (also the host port in Compose)   | API, Compose |
+| `PGUSER`, `PGPASSWORD`, `PGDATABASE` | `app` / `app` / `app`                                 | API, Compose |
+| `PGSSLMODE`                          | `disable`                                             | API          |
+| `DATABASE_URL`                       | unset; when set, it wins over the `PG*` values        | API          |
+| `API_URL`                            | `http://localhost:8080`                               | Web          |
+| `WEB_PORT`                           | `3000`                                                | Web          |
 
 The database credentials are the standard libpq variables, written once: the API builds its
 connection from them (escaping any character correctly), Compose creates the database with them,

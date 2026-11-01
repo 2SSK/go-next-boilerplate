@@ -15,8 +15,8 @@ import (
 )
 
 // The requests below never reach the database, so a nil pool is enough.
-func testRoutes() http.Handler {
-	return Routes(Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+func testRoutes(docs bool) http.Handler {
+	return Routes(Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), DocsEnabled: docs})
 }
 
 func TestRoutes(t *testing.T) {
@@ -39,7 +39,7 @@ func TestRoutes(t *testing.T) {
 		{"non-numeric id", http.MethodPatch, "/api/v1/todos/abc", `{}`, http.StatusBadRequest, api.ErrorErrorCodeBadRequest, "application/json"},                                                    // feature:todo
 		{"body over the limit", http.MethodPost, "/api/v1/todos", `{"title":"` + strings.Repeat("a", maxBodyBytes) + `"}`, http.StatusBadRequest, api.ErrorErrorCodeBadRequest, "application/json"}, // feature:todo
 	}
-	h := testRoutes()
+	h := testRoutes(true)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -51,9 +51,7 @@ func TestRoutes(t *testing.T) {
 			if ct := rec.Header().Get("Content-Type"); ct != tt.wantType {
 				t.Errorf("Content-Type = %q, want %q", ct, tt.wantType)
 			}
-			if rec.Header().Get(middleware.RequestIDHeader) == "" {
-				t.Error("middleware chain did not set a request ID")
-			}
+			checkEveryResponseHeaders(t, rec)
 			if tt.wantCode != "" {
 				var body api.Error
 				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error.Code != tt.wantCode || body.Error.Message == "" {
@@ -61,6 +59,18 @@ func TestRoutes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// checkEveryResponseHeaders asserts what the middleware chain adds to every
+// response, whatever the route.
+func checkEveryResponseHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Header().Get(middleware.RequestIDHeader) == "" {
+		t.Error("middleware chain did not set a request ID")
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Content-Security-Policy") == "" {
+		t.Error("security headers missing")
 	}
 }
 
@@ -78,5 +88,30 @@ func TestNewSetsTimeouts(t *testing.T) {
 		if d <= 0 {
 			t.Errorf("%s is unset; slow clients could hold connections forever", name)
 		}
+	}
+}
+
+func TestDocsCanBeTurnedOff(t *testing.T) {
+	h := testRoutes(false)
+	for _, path := range []string{"/docs", "/openapi.yaml"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s = %d with docs off, want 404", path, rec.Code)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(rec.Body.String(), "docs") {
+		t.Errorf("root still links the docs: %s", rec.Body)
+	}
+}
+
+func TestJSONResponsesDenyEverything(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testRoutes(true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/livez", nil))
+	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'none'; frame-ancestors 'none'" {
+		t.Errorf("JSON CSP = %q", got)
 	}
 }

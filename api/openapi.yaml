@@ -165,10 +165,13 @@ components:
 
     Root:
       type: object
-      required: [name, docs, readiness]
+      required: [name, readiness]
       properties:
         name: { type: string, example: go-next-boilerplate }
-        docs: { type: string, example: /docs }
+        docs:
+          type: string
+          example: /docs
+          description: Absent when the docs are turned off (DOCS_ENABLED=false).
         readiness: { type: string, example: /readyz }
 
     Liveness:

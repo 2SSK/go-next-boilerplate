@@ -29,13 +29,15 @@ const maxBodyBytes = 1 << 20
 type Deps struct {
 	Log *slog.Logger
 	DB  *pgxpool.Pool
+	// DocsEnabled mounts /docs and /openapi.yaml.
+	DocsEnabled bool
 }
 
 // Routes returns the full handler. Every route is defined in api/openapi.yaml;
 // this wires each area's handler to its storage and mounts the result.
 func Routes(d Deps) http.Handler {
 	h := handlers.Handlers{
-		SystemHandler: handlers.NewSystemHandler(AppName, d.DB),
+		SystemHandler: handlers.NewSystemHandler(AppName, d.DB, docsPath(d.DocsEnabled)),
 		TodoHandler:   handlers.NewTodoHandler(store.NewTodos(d.DB)), // feature:todo
 	}
 
@@ -57,18 +59,28 @@ func Routes(d Deps) http.Handler {
 		// A path or query parameter doesn't parse (for example /todos/abc).
 		ErrorHandlerFunc: badRequest,
 	})
-	docs.Register(mux)
+	if d.DocsEnabled {
+		docs.Register(mux)
+	}
 	// Anything unmatched gets a JSON 404 instead of the mux's plain text.
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.Error(w, http.StatusNotFound, api.ErrorErrorCodeNotFound, "not found")
 	})
 
 	return middleware.Chain(mux,
+		middleware.SecurityHeaders,
 		middleware.RequestID,
 		middleware.Logger(d.Log),
 		middleware.Recover(d.Log),
 		middleware.BodyLimit(maxBodyBytes),
 	)
+}
+
+func docsPath(enabled bool) string {
+	if enabled {
+		return docs.Path
+	}
+	return ""
 }
 
 func badRequest(w http.ResponseWriter, _ *http.Request, err error) {

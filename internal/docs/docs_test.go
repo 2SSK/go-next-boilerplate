@@ -37,6 +37,23 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+func TestDocsPagePolicyAllowsOnlyItsOwnScript(t *testing.T) {
+	rec := httptest.NewRecorder()
+	servePage(rec, httptest.NewRequest(http.MethodGet, Path, nil))
+	policy := rec.Header().Get("Content-Security-Policy")
+
+	if !strings.Contains(policy, "'sha256-"+sha256Base64(initScript)+"'") {
+		t.Errorf("policy does not pin the init script's hash: %s", policy)
+	}
+	if strings.Contains(policy, "script-src 'unsafe-inline'") || strings.Contains(policy, "script-src *") {
+		t.Errorf("policy allows arbitrary scripts: %s", policy)
+	}
+	// The served script must be byte-identical to what was hashed.
+	if !strings.Contains(rec.Body.String(), "<script>"+initScript+"</script>") {
+		t.Error("the page's inline script differs from the hashed one; the browser would block it")
+	}
+}
+
 func TestDocsPageKeepsTelemetryOff(t *testing.T) {
 	// Scalar defaults to sending telemetry and enabling its hosted AI agent.
 	for _, want := range []string{"telemetry: false", "agent: { disabled: true }"} {

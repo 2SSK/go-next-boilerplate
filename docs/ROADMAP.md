@@ -26,7 +26,9 @@ The bar: `make setup → make dev → make reset → make check` is reliable, an
 - [x] Web app on the generated client; no hand-copied types
 - [x] Playwright end-to-end tests on the production images, in CI
 - [x] Compose: migrate one-shot, healthchecks, restart policies, database on localhost only
-- [ ] Tag `core/v1.0.0`
+- [x] Production logging: JSON, request IDs, levels, redaction, build version
+- [x] Security headers (API, docs page, web), `DOCS_ENABLED`, Dependabot
+- [x] Tag `core/v1.0.0`
 
 ## Milestone 2: platform v1.0 (`platform`)
 
