@@ -1,183 +1,77 @@
+// Package config loads runtime settings from the environment.
 package config
 
 import (
+	"fmt"
 	"os"
-	"strings"
-
-	"github.com/go-playground/validator/v10"
-	_ "github.com/joho/godotenv/autoload"
-	"github.com/knadh/koanf/providers/env"
-	"github.com/knadh/koanf/v2"
-	"github.com/rs/zerolog"
+	"strconv"
+	"time"
 )
 
+// Config holds every runtime setting for the API.
 type Config struct {
-	Primary       Primary              `koanf:"primary" validate:"required"`
-	Server        ServerConfig         `koanf:"server" validate:"required"`
-	Database      DatabaseConfig       `koanf:"database" validate:"required"`
-	Auth          AuthConfig           `koanf:"auth" validate:"required"`
-	Observability *ObservabilityConfig `koanf:"observability"`
+	// Env is "development" or "production". Production switches logs to JSON.
+	Env         string
+	Port        int
+	DatabaseURL string
+	// ShutdownTimeout bounds how long in-flight requests may drain on SIGTERM.
+	ShutdownTimeout time.Duration
 }
 
-type Primary struct {
-	Env string `koanf:"env" validate:"required"`
-}
-
-type ServerConfig struct {
-	Port               string   `koanf:"port" validate:"required"`
-	ReadTimeout        int      `koanf:"read_timeout" validate:"required"`
-	WriteTimeout       int      `koanf:"write_timeout" validate:"required"`
-	IdleTimeout        int      `koanf:"idle_timeout" validate:"required"`
-	CORSAllowedOrigins []string `koanf:"cors_allowed_origins" validate:"required"`
-}
-
-type DatabaseConfig struct {
-	Host            string `koanf:"host" validate:"required"`
-	Port            int    `koanf:"port" validate:"required"`
-	User            string `koanf:"user" validate:"required"`
-	Password        string `koanf:"password"`
-	Name            string `koanf:"name" validate:"required"`
-	SSLMode         string `koanf:"ssl_mode" validate:"required"`
-	MaxOpenConns    int    `koanf:"max_open_conns" validate:"required"`
-	MaxIdleConns    int    `koanf:"max_idle_conns" validate:"required"`
-	ConnMaxLifetime int    `koanf:"conn_max_lifetime" validate:"required"`
-	ConnMaxIdleTime int    `koanf:"conn_max_idle_time" validate:"required"`
-}
-
-type AuthConfig struct {
-	SecretKey string `koanf:"secret_key" validate:"required"`
-}
-
-func parseMapString(value string) (map[string]string, bool) {
-	if !strings.HasPrefix(value, "map[") || !strings.HasSuffix(value, "]") {
-		return nil, false
+// Load reads configuration from the process environment. Unset variables fall
+// back to defaults that match docker-compose.yml; invalid values are errors.
+func Load() (Config, error) {
+	cfg := Config{
+		Env:         getEnv("APP_ENV", "development"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://app:app@localhost:5432/app?sslmode=disable"),
 	}
 
-	content := strings.TrimPrefix(value, "map[")
-	content = strings.TrimSuffix(content, "]")
-
-	if content == "" {
-		return make(map[string]string), true
+	if cfg.Env != "development" && cfg.Env != "production" {
+		return Config{}, fmt.Errorf("APP_ENV must be development or production, got %q", cfg.Env)
 	}
 
-	result := make(map[string]string)
-
-	i := 0
-	for i < len(content) {
-		keyStart := i
-		for i < len(content) && content[i] != ':' {
-			i++
-		}
-		if i >= len(content) {
-			break
-		}
-
-		key := strings.TrimSpace(content[keyStart:i])
-		i++
-
-		valueStart := i
-		if i+4 <= len(content) && content[i:i+4] == "map[" {
-			bracketCount := 0
-			for i < len(content) {
-				if i+4 <= len(content) && content[i:i+4] == "map[" {
-					bracketCount++
-					i += 4
-				} else if content[i] == ']' {
-					bracketCount--
-					i++
-					if bracketCount == 0 {
-						break
-					}
-				} else {
-					i++
-				}
-			}
-		} else {
-			for i < len(content) && content[i] != ' ' {
-				i++
-			}
-		}
-
-		value := strings.TrimSpace(content[valueStart:i])
-
-		if nestedMap, isNested := parseMapString(value); isNested {
-			for nestedKey, nestedValue := range nestedMap {
-				result[key+"."+nestedKey] = nestedValue
-			}
-		} else {
-			result[key] = value
-		}
-
-		for i < len(content) && content[i] == ' ' {
-			i++
-		}
-	}
-
-	return result, true
-}
-
-func LoadConfig() (*Config, error) {
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
-
-	k := koanf.New(".")
-
-	envVars := make(map[string]string)
-	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", 2)
-		if len(parts) == 2 && strings.HasPrefix(parts[0], "BOILERPLATE_") {
-			key := parts[0]
-			value := parts[1]
-
-			configKey := strings.ToLower(strings.TrimPrefix(key, "BOILERPLATE_"))
-
-			if mapData, isMap := parseMapString(value); isMap {
-				for mapKey, mapValue := range mapData {
-					flatKey := configKey + "." + strings.ToLower(mapKey)
-					envVars[flatKey] = mapValue
-				}
-			} else {
-				envVars[configKey] = value
-			}
-		}
-	}
-
-	err := k.Load(env.ProviderWithValue("BOILERPLATE_", ".", func(key, value string) (string, any) {
-		return strings.ToLower(strings.TrimPrefix(key, "BOILERPLATE_")), value
-	}), nil)
+	port, err := getEnvInt("PORT", 8080)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("could not load initial env variables")
+		return Config{}, err
 	}
+	cfg.Port = port
 
-	for key, value := range envVars {
-		k.Set(key, value)
-	}
-
-	mainConfig := &Config{}
-
-	err = k.Unmarshal("", mainConfig)
+	timeout, err := getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("could not unmarshal main config")
+		return Config{}, err
 	}
+	cfg.ShutdownTimeout = timeout
 
-	validate := validator.New()
+	return cfg, nil
+}
 
-	err = validate.Struct(mainConfig)
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("config validation failed")
-	} else {
-		logger.Info().Msg("config validation passed")
+		return 0, fmt.Errorf("invalid %s %q: must be an integer", key, v)
 	}
+	return n, nil
+}
 
-	if mainConfig.Observability == nil {
-		mainConfig.Observability = DefaultObservabilityConfig()
+func getEnvDuration(key string, fallback time.Duration) (time.Duration, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
 	}
-
-	mainConfig.Observability.ServiceName = "boilerplate"
-	mainConfig.Observability.Environment = mainConfig.Primary.Env
-
-	if err := mainConfig.Observability.Validate(); err != nil {
-		logger.Fatal().Err(err).Msg("invalid observability config")
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: must be a duration like 10s", key, v)
 	}
-
-	return mainConfig, nil
+	return d, nil
 }

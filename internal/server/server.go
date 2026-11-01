@@ -1,70 +1,61 @@
+// Package server builds the HTTP routing table and the http.Server around it.
 package server
 
 import (
-	"context"
-	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/2SSK/boilerplate/internal/config"
-	"github.com/2SSK/boilerplate/internal/database"
-	"github.com/rs/zerolog"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/2SSK/boilerplate/internal/httpx"
+	"github.com/2SSK/boilerplate/internal/middleware"
+	"github.com/2SSK/boilerplate/internal/todo" // feature:todo
 )
 
-type Server struct {
-	Config     *config.Config
-	Logger     *zerolog.Logger
-	DB         *database.Database
-	httpServer *http.Server
+// AppName is reported by GET /.
+const AppName = "boilerplate"
+
+// Deps are the shared dependencies handlers are built from.
+type Deps struct {
+	Log *slog.Logger
+	DB  *pgxpool.Pool
 }
 
-func New(cfg *config.Config, logger *zerolog.Logger) (*Server, error) {
-	db, err := database.New(cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
-	}
+// Routes returns the full handler: every route on one flat ServeMux, wrapped
+// in the middleware chain. Go 1.22+ patterns match on method and path, so
+// "GET /items" and "POST /items" are separate entries.
+func Routes(d Deps) http.Handler {
+	mux := http.NewServeMux()
 
-	server := &Server{
-		Config: cfg,
-		Logger: logger,
-		DB:     db,
-	}
+	mux.HandleFunc("GET /{$}", handleRoot(AppName))
+	mux.HandleFunc("GET /healthz", handleHealth(d.DB))
+	// Anything unmatched gets a JSON 404 instead of the mux's plain text.
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.Error(w, http.StatusNotFound, "not found")
+	})
 
-	return server, nil
+	// feature:todo:begin
+	todo.NewHandler(todo.NewPostgresStore(d.DB)).Register(mux, "/api/v1/todos")
+	// feature:todo:end
+
+	return middleware.Chain(mux,
+		middleware.RequestID,
+		middleware.Logger(d.Log),
+		middleware.Recover(d.Log),
+	)
 }
 
-func (s *Server) SetupHTTPServer(handler http.Handler) {
-	s.httpServer = &http.Server{
-		Addr:         ":" + s.Config.Server.Port,
-		Handler:      handler,
-		ReadTimeout:  time.Duration(s.Config.Server.ReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(s.Config.Server.WriteTimeout) * time.Second,
-		IdleTimeout:  time.Duration(s.Config.Server.IdleTimeout) * time.Second,
+// New returns an http.Server with timeouts set, so a slow client can never
+// hold a connection open forever.
+func New(port int, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
-}
-
-func (s *Server) Start() error {
-	if s.httpServer == nil {
-		return errors.New("HTTP server not initialized")
-	}
-
-	s.Logger.Info().
-		Str("port", s.Config.Server.Port).
-		Str("env", s.Config.Primary.Env).
-		Msg("starting server")
-
-	return s.httpServer.ListenAndServe()
-}
-
-func (s *Server) Shutdown(ctx context.Context) error {
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("failed to shutdown HTTP server: %w", err)
-	}
-
-	if err := s.DB.Close(); err != nil {
-		return fmt.Errorf("failed to close database connection: %w", err)
-	}
-
-	return nil
 }
