@@ -1,19 +1,30 @@
 version: "2"
 
-run:
-  timeout: 5m
-
 linters:
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
+    - bodyclose
+    - errorlint
     - gocritic
     - gocyclo
     - gosec
+    - misspell
+    - noctx
+    - revive
+    - unconvert
+  exclusions:
+    rules:
+      # httptest.NewRequest already carries a background context
+      - path: _test\.go
+        linters: [noctx]
+  settings:
+    gocyclo:
+      min-complexity: 10
 
 formatters:
   enable:
+    - gofmt
     - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/2SSK/boilerplate

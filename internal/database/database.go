@@ -1,119 +1,121 @@
+// Package database owns the Postgres pool and the embedded migrations.
 package database
 
 import (
 	"context"
+	"embed"
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
-	"time"
+	"io/fs"
+	"log/slog"
+	"sort"
 
-	"github.com/2SSK/boilerplate/internal/config"
-	loggerConfig "github.com/2SSK/boilerplate/internal/logger"
-	pgxzero "github.com/jackc/pgx-zerolog"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/tracelog"
-	"github.com/rs/zerolog"
 )
 
-type Database struct {
-	Pool *pgxpool.Pool
-	log  *zerolog.Logger
-}
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
-// multiTracer allows chaining multiple tracers
-type multiTracer struct {
-	tracers []any
-}
+// migrationLockID is an arbitrary key for pg_advisory_lock, so replicas that
+// boot together apply migrations one at a time instead of racing.
+const migrationLockID = 7_331_001
 
-// TraceQueryStart implements pgx tracer interface
-func (mt *multiTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	for _, tracer := range mt.tracers {
-		if t, ok := tracer.(interface {
-			TraceQueryStart(context.Context, *pgx.Conn, pgx.TraceQueryStartData) context.Context
-		}); ok {
-			ctx = t.TraceQueryStart(ctx, conn, data)
-		}
-	}
-	return ctx
-}
-
-// TraceQueryEnd implements pgx tracer interface
-func (mt *multiTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
-	for _, tracer := range mt.tracers {
-		if t, ok := tracer.(interface {
-			TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData)
-		}); ok {
-			t.TraceQueryEnd(ctx, conn, data)
-		}
-	}
-}
-
-const DatabasePingTimeout = 10
-
-func New(cfg *config.Config, logger *zerolog.Logger) (*Database, error) {
-	hostPort := net.JoinHostPort(cfg.Database.Host, strconv.Itoa(cfg.Database.Port))
-
-	// URL-encode the password
-	encodedPassword := url.QueryEscape(cfg.Database.Password)
-	dsn := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s",
-		cfg.Database.User,
-		encodedPassword,
-		hostPort,
-		cfg.Database.Name,
-		cfg.Database.SSLMode,
-	)
-
-	pgxPoolConfig, err := pgxpool.ParseConfig(dsn)
+// Open connects to Postgres, verifies the connection, and applies pending
+// migrations. The caller owns the returned pool and must Close it.
+func Open(ctx context.Context, url string, log *slog.Logger) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pgx pool config: %w", err)
+		return nil, fmt.Errorf("create pool: %w", err)
 	}
 
-	if cfg.Primary.Env == "local" {
-		globalLevel := logger.GetLevel()
-		pgxLogger := loggerConfig.NewPgxLogger(globalLevel)
-		// Chain tracers - New Relic first, then local logging
-		if pgxPoolConfig.ConnConfig.Tracer != nil {
-			// If New Relic tracer exists, create a multi-tracer
-			localTracer := &tracelog.TraceLog{
-				Logger:   pgxzero.NewLogger(pgxLogger),
-				LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(globalLevel)),
-			}
-			pgxPoolConfig.ConnConfig.Tracer = &multiTracer{
-				tracers: []any{pgxPoolConfig.ConnConfig.Tracer, localTracer},
-			}
-		} else {
-			pgxPoolConfig.ConnConfig.Tracer = &tracelog.TraceLog{
-				Logger:   pgxzero.NewLogger(pgxLogger),
-				LogLevel: tracelog.LogLevel(loggerConfig.GetPgxTraceLogLevel(globalLevel)),
-			}
-		}
+	// pgxpool.New is lazy; ping now so a bad DATABASE_URL fails at startup.
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), pgxPoolConfig)
+	applied, err := migrate(ctx, pool)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pgx pool: %w", err)
+		pool.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
-	database := &Database{
-		Pool: pool,
-		log:  logger,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), DatabasePingTimeout*time.Second)
-	defer cancel()
-	if err = pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	logger.Info().Msg("connected to the database")
-
-	return database, nil
+	log.Info("database ready", "migrations_applied", applied)
+	return pool, nil
 }
 
-func (db *Database) Close() error {
-	db.log.Info().Msg("closing database connection pool")
-	db.Pool.Close()
-	return nil
+// migrate applies embedded .sql files in name order (0001, 0002, ...), each
+// in its own transaction, recording it in schema_migrations. Re-running is a
+// no-op. It returns how many files were applied.
+func migrate(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	// Advisory locks are per session, so lock and unlock on the same conn.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockID); err != nil {
+		return 0, fmt.Errorf("take migration lock: %w", err)
+	}
+	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrationLockID) }()
+
+	if _, err := conn.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    text PRIMARY KEY,
+			applied_at timestamptz NOT NULL DEFAULT now()
+		)`); err != nil {
+		return 0, fmt.Errorf("create schema_migrations: %w", err)
+	}
+
+	names, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	if err != nil {
+		return 0, fmt.Errorf("list migrations: %w", err)
+	}
+	sort.Strings(names)
+
+	applied := 0
+	for _, name := range names {
+		ok, err := applyOne(ctx, conn.Conn(), name)
+		if err != nil {
+			return applied, err
+		}
+		if ok {
+			applied++
+		}
+	}
+	return applied, nil
+}
+
+// applyOne runs a single migration file unless schema_migrations already lists
+// it. The SQL and its bookkeeping row commit together or not at all.
+func applyOne(ctx context.Context, conn *pgx.Conn, name string) (bool, error) {
+	var done bool
+	if err := conn.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`, name,
+	).Scan(&done); err != nil {
+		return false, fmt.Errorf("check %s: %w", name, err)
+	}
+	if done {
+		return false, nil
+	}
+
+	sql, err := migrationsFS.ReadFile(name)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", name, err)
+	}
+
+	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, string(sql)); err != nil {
+			return fmt.Errorf("apply %s: %w", name, err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, name); err != nil {
+			return fmt.Errorf("record %s: %w", name, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

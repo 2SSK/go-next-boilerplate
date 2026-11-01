@@ -1,124 +1,141 @@
-# Boilerplate Backend
+# go-next-boilerplate
 
-A production-ready Go backend boilerplate using Echo framework, PostgreSQL, and comprehensive observability features.
+A Go API and a Next.js frontend, wired together. Clone it, run two commands, and start
+building. It ships with a small todo app that shows a full round trip (Next.js → Go →
+Postgres); `make reset` strips that out when you want a blank slate.
 
-## Features
+| Layer    | Choice                                                                         |
+| -------- | ------------------------------------------------------------------------------ |
+| API      | Go standard library `net/http` (1.22+ routing), `log/slog`, `pgx` for Postgres |
+| Database | Postgres 17 in Docker, plain `.sql` migrations embedded in the binary          |
+| Web      | Next.js (App Router), shadcn/ui, Tailwind v4, Inter + JetBrains Mono           |
+| Tooling  | Make, Docker Compose, golangci-lint, ESLint, Prettier, GitHub Actions          |
 
-- **Framework**: Echo v4 for high-performance HTTP routing
-- **Database**: PostgreSQL with connection pooling and migrations
-- **Observability**: Structured logging with Zerolog, health checks, and metrics
-- **Configuration**: Environment-based config with validation
-- **Middleware**: CORS, rate limiting, request logging, error handling
-- **API Documentation**: OpenAPI/Swagger UI
-- **Development Tools**: Hot reload, linting, testing setup
+The only Go dependency is `pgx`.
 
-## Prerequisites
+## Quick start
 
-- Go 1.21+
-- PostgreSQL 12+
-- Docker (optional, for local development)
+Needs Go 1.25+, Node 22+, and Docker.
 
-## Quick Start
-
-1. **Clone the repository**
-
-   ```bash
-   git clone <repository-url>
-   cd boilerplate
-   ```
-
-2. **Set up environment variables**
-
-   ```bash
-   cp .env.sample .env
-   # Edit .env with your configuration
-   ```
-
-3. **Install dependencies**
-
-   ```bash
-   go mod download
-   ```
-
-4. **Set up database**
-
-   ```bash
-   # Ensure PostgreSQL is running
-   # Run migrations (only in non-local environments)
-   go-task migrate
-   ```
-
-5. **Run the application**
-   ```bash
-   go-task run
-   ```
-
-The server will start on `http://localhost:8080`.
-
-## Configuration
-
-Configuration is managed through environment variables with the `BOILERPLATE_` prefix. Key settings:
-
-- **Server**: Port, timeouts, CORS origins
-- **Database**: Connection details, pooling settings
-- **Observability**: Logging level, service name, health checks
-
-See `.env.sample` for all available options.
-
-## API Endpoints
-
-- `GET /status` - Health check endpoint
-- `GET /docs` - OpenAPI documentation UI
-- `GET /static/*` - Static file serving
-
-## Development
-
-### Available Tasks
-
-- `go-task run` - Start the development server
-- `go-task build` - Build the application
-- `go-task test` - Run tests
-- `go-task lint` - Run linters
-- `go-task migrate` - Run database migrations
-
-### Project Structure
-
-```
-├── cmd/boilerplate/     # Application entry point
-├── internal/
-│   ├── config/          # Configuration management
-│   ├── database/        # Database setup and migrations
-│   ├── handler/         # HTTP handlers
-│   ├── logger/          # Logging setup
-│   ├── middleware/      # Echo middlewares
-│   ├── repository/      # Data access layer
-│   ├── router/          # Route definitions
-│   ├── server/          # Server setup
-│   ├── service/         # Business logic
-│   └── validation/      # Input validation
-├── static/              # Static assets (OpenAPI docs)
-├── .env.sample          # Environment template
-└── Taskfile.yml         # Development tasks
+```sh
+gh repo create my-app --template 2SSK/go-next-boilerplate --private --clone
+cd my-app
+make setup   # .env, Go modules, npm install
+make dev     # Postgres + API on :8080 + web on :3000
 ```
 
-## Observability
+Open http://localhost:3000. The status pill on the landing page turns green once the API and
+database answer.
 
-### Logging
+Then make it yours:
 
-- Structured JSON logs in production
-- Console-formatted logs in development
-- Request/response logging with latency and status
-- Error stack traces
+```sh
+make rename NAME=my-app MODULE=github.com/you/my-app   # module path, app name, compose project
+make reset                                             # optional: remove the todo demo
+```
 
-### Health Checks
+## Commands
 
-- Database connectivity checks
-- Configurable check intervals and timeouts
+Run `make` to list them all. The ones you'll use most:
 
-## Contributing
+| Command                 | What it does                                                |
+| ----------------------- | ----------------------------------------------------------- |
+| `make dev`              | Postgres, API, and web together; Ctrl-C stops everything    |
+| `make test`             | Go unit tests with the race detector                        |
+| `make test-integration` | Go tests against the real database                          |
+| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier         |
+| `make check`            | lint + test + build, the same gates CI runs                 |
+| `make up` / `make down` | the whole stack in Docker, production builds                |
+| `make db-shell`         | psql into the dev database                                  |
+| `make db-reset`         | wipe the dev database                                       |
+| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt) |
 
-1. Follow Go best practices and project conventions
-2. Add tests for new features
-3. Update documentation as needed
-4. Run `go-task lint` before committing
+## Layout
 
+```
+cmd/api/              entry point: config, database, server, graceful shutdown
+internal/
+  config/             env vars → Config, with defaults and validation
+  database/           pgx pool + migrator (migrations/*.sql, applied on startup)
+  httpx/              JSON response and request-decoding helpers
+  middleware/         request ID, access log, panic recovery
+  server/             route table, GET / and GET /healthz
+  todo/               the demo feature: model, Postgres store, handlers, tests
+web/
+  app/                pages (landing, todos) and globals.css (the design tokens)
+  components/         navbar, theme toggle, API status, ui/ (shadcn)
+  config/site.ts      app name, description, and navigation
+  lib/api.ts          fetch helper for the Go API
+scripts/              reset.sh and rename.sh, run through make
+```
+
+## How the pieces connect
+
+The browser only talks to Next.js. `next.config.ts` rewrites `/api/*` and `/healthz` to
+`API_URL`, so there is no CORS to configure and the API address lives in one env var.
+
+Configuration is environment variables only. `make setup` copies `.env.example` to `.env`, and
+the Makefile exports it to every command.
+
+| Variable                                            | Default                                          | Used by |
+| --------------------------------------------------- | ------------------------------------------------ | ------- |
+| `APP_ENV`                                           | `development` (text logs) or `production` (JSON) | API     |
+| `PORT`                                              | `8080`                                           | API     |
+| `DATABASE_URL`                                      | `postgres://app:app@localhost:5432/app?...`      | API     |
+| `SHUTDOWN_TIMEOUT`                                  | `10s`, the drain time after SIGTERM              | API     |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `app` / `app` / `app`                            | Compose |
+| `DB_PORT`                                           | `5432`, the host port for compose Postgres       | Compose |
+| `API_URL`                                           | `http://localhost:8080`, read at build time      | Web     |
+| `WEB_PORT`                                          | `3000`                                           | Web     |
+
+`.env.example` explains each one. If port 5432 is already taken, change `DB_PORT` and the port in `DATABASE_URL` together.
+
+## Adding a feature
+
+`internal/todo` is the template. A new resource, say `notes`:
+
+1. **Migration.** Add `internal/database/migrations/0003_notes.sql`. It runs on the next API
+   start. Files apply in name order, once each, inside a transaction.
+2. **Package.** Copy `internal/todo` to `internal/notes`: a `Store` interface, a Postgres
+   implementation, and a `Handler` with a `Register(mux, prefix)` method. Handler tests use an
+   in-memory store, so they need no database.
+3. **Route.** Add one line in `internal/server/server.go`:
+   `notes.NewHandler(notes.NewPostgresStore(d.DB)).Register(mux, "/api/v1/notes")`.
+4. **Web.** Add `web/lib/notes.ts` (typed calls through `api()`), a page in `web/app/notes/`,
+   and a nav entry in `web/config/site.ts`. For more shadcn components, run
+   `npx shadcn@latest add <name>` in `web/`.
+
+## How reset works
+
+The demo owns some files outright (`internal/todo/`, its migration, `web/app/todos/`, and so
+on), and adds a few lines of wiring to shared files. Those lines are tagged with a comment:
+either on the same line, or between a begin and an end comment (`feature:todo:begin` and its
+matching `:end`). `scripts/reset.sh` deletes the owned files, deletes the tagged lines, then
+runs gofmt, `go mod tidy`, the build, and Prettier.
+
+After a reset you have `GET /`, `GET /healthz`, and the landing page. The `todos` table stays in
+your local database until `make db-reset`. CI runs a reset on every push and builds the result,
+so this path can't silently break.
+
+## Design
+
+The web app follows one design language: minimal, one accent colour, soft raised surfaces, and
+three motion speeds on a single easing curve. Light mode is neutral paper with Tokyo Night Day
+accents; dark mode is Tokyo Night. Every token is a CSS variable in `web/app/globals.css`, and the
+shadcn components read the same variables, so changing a colour there restyles everything.
+
+Helper classes: `container-page` (page column), `surface` (raised card), `label` (small caps
+heading), `meta` (mono data text), `interactive` (shared transition), `animate-rise`
+(entrance; stagger it with `animationDelay`).
+
+## Deploying
+
+`make up` runs the production images locally. The API image (`Dockerfile`) is a static binary on
+Alpine, runs as a non-root user, and has a health check on `/healthz`. The web image
+(`web/Dockerfile`) is Next.js standalone output. Set `APP_ENV=production` and `DATABASE_URL` for
+the API. `API_URL` is read when the web image is **built**, because Next.js resolves rewrites
+at build time, so pass it as a build arg.
+
+## License
+
+MIT

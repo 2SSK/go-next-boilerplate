@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Design language: minimal, one accent, soft raised surfaces, three motion speeds on one
+ * curve. Inter for text, JetBrains Mono for data. Light is neutral paper with Tokyo Night
+ * Day accents; dark is Tokyo Night. shadcn components read the variables below, so
+ * changing a token here restyles every component.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+
+  --shadow-card: var(--elevation-card);
+  --shadow-float: var(--elevation-float);
+
+  /* Motion: quick for hovers and presses, normal for fades, slow for reveals */
+  --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --duration-quick: 120ms;
+  --duration-normal: 220ms;
+  --duration-slow: 400ms;
+}
+
+:root {
+  --background: #f7f7f9;
+  --foreground: #1a1b26;
+  --card: #ffffff;
+  --card-foreground: #1a1b26;
+  --popover: #ffffff;
+  --popover-foreground: #1a1b26;
+  --primary: #2a6fdb;
+  --primary-foreground: #ffffff;
+  --secondary: #eeeff3;
+  --secondary-foreground: #1a1b26;
+  --muted: #eeeff3;
+  --muted-foreground: #565a6e;
+  /* Tertiary text: labels, timestamps, counts */
+  --subtle: #858aa0;
+  --accent: #eeeff3;
+  --accent-foreground: #1a1b26;
+  --destructive: #d6335a;
+  --success: #3d7a2f;
+  --border: #e5e6ec;
+  --input: #e5e6ec;
+  --ring: #2a6fdb;
+  --radius: 0.75rem;
+
+  --elevation-card: 0 1px 2px rgb(16 18 30 / 0.04), 0 12px 32px -16px rgb(16 18 30 / 0.14);
+  --elevation-float: 0 2px 6px rgb(16 18 30 / 0.05), 0 24px 48px -20px rgb(16 18 30 / 0.22);
+}
+
+.dark {
+  --background: #1a1b26;
+  --foreground: #c0caf5;
+  --card: #1f2335;
+  --card-foreground: #c0caf5;
+  --popover: #1f2335;
+  --popover-foreground: #c0caf5;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --secondary: #292e42;
+  --secondary-foreground: #c0caf5;
+  --muted: #292e42;
+  --muted-foreground: #a9b1d6;
+  --subtle: #737aa2;
+  --accent: #292e42;
+  --accent-foreground: #c0caf5;
+  --destructive: #f7768e;
+  --success: #9ece6a;
+  --border: #2c3047;
+  --input: #2c3047;
+  --ring: #7aa2f7;
+
+  --elevation-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 16px 40px -24px rgb(0 0 0 / 0.7);
+  --elevation-float: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 56px -24px rgb(0 0 0 / 0.8);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--subtle) 50%, transparent) transparent;
+  }
+
+  html {
+    @apply bg-background font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    line-height: 1.6;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* The page column every section shares */
+  .container-page {
+    @apply mx-auto w-full max-w-3xl px-5 sm:px-6;
+  }
+
+  /* Small uppercase section label */
+  .label {
+    @apply text-subtle text-xs font-semibold tracking-[0.08em] uppercase;
+  }
+
+  /* Data: dates, counts, routes */
+  .meta {
+    @apply text-subtle font-mono text-[13px] font-medium tabular-nums;
+  }
+
+  .surface {
+    @apply bg-card text-card-foreground shadow-card rounded-2xl border;
+  }
+
+  /* Interactive surfaces share one motion */
+  .interactive {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: var(--duration-normal);
+    transition-timing-function: var(--ease-out-cubic);
+  }
+}
+
+/* Theme switch: a short cross-fade instead of a hard cut */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-normal);
+  animation-timing-function: var(--ease-out-cubic);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Entrance: pair with style={{ animationDelay }} to stagger blocks */
+.animate-rise {
+  animation: rise var(--duration-slow) var(--ease-out-cubic) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
