@@ -2,7 +2,8 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # core and the extended variant are both maintained (docs/adr/0003)
+    branches: [main, platform]
   pull_request:
 
 concurrency:
