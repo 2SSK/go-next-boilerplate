@@ -17,6 +17,11 @@ updates:
     groups:
       web:
         update-types: [minor, patch]
+    ignore:
+      # openapi-typescript (which generates lib/api/schema.ts) doesn't support
+      # TypeScript 7 yet. Remove this once it does.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /

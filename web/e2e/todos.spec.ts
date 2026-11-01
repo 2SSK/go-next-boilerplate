@@ -9,8 +9,14 @@ test("a todo makes the full round trip and survives a reload", async ({ page }) 
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
 
+  // The checkbox flips at once (optimistic update); wait for the server to confirm
+  // the save before reloading, or the reload can cancel the request mid-flight.
+  const saved = page.waitForResponse(
+    (r) => r.request().method() === "PATCH" && r.url().includes("/api/v1/todos/") && r.ok(),
+  );
   await row.getByRole("checkbox").click();
   await expect(row.getByRole("checkbox")).toBeChecked();
+  await saved;
 
   // Server-rendered from Postgres on reload: proves it was stored, not just shown
   await page.reload();
