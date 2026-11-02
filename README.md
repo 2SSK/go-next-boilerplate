@@ -1,299 +1,157 @@
-# go-next-boilerplate
+# go-next-boilerplate · platform
 
-A minimal full-stack starter for Go on the backend and Next.js on the frontend. Clone it, run
-two commands, and start building. It ships with a small todo app that shows the full round trip
-(browser → Next.js → Go → Postgres); `make reset` strips it out when you want a blank slate.
+A starter for a Go API with a Next.js frontend, plus sign-in, background workflows, and
+monitoring. It ships with a small todo app that runs through every piece; `make reset` removes
+it. For the plain starter without these, use the `main` branch.
 
-| Layer    | Choice                                                                            |
-| -------- | --------------------------------------------------------------------------------- |
-| Contract | OpenAPI 3 (`api/openapi.yaml`): Go server and TypeScript types generated from it  |
-| API      | Go standard library `net/http`, `log/slog`, `pgx` for Postgres                    |
-| Database | Postgres 17, plain SQL migrations with checksums, run as a deploy step            |
-| Web      | Next.js (App Router), shadcn/ui, Tailwind v4, Inter + JetBrains Mono              |
-| Tooling  | Make, Docker Compose, golangci-lint, ESLint, Prettier, Playwright, GitHub Actions |
-
-The Go API has two dependencies: `pgx` and `oapi-codegen/runtime` (used by the generated code).
+- **API:** Go standard library (`net/http`, `slog`) and `pgx`
+- **Contract:** OpenAPI (`api/openapi.yaml`); the Go server and TypeScript types are generated
+  from it
+- **Database:** Postgres 17 with plain SQL migrations
+- **Web:** Next.js App Router, shadcn/ui, Tailwind v4
+- **Auth:** Keycloak, with sign-in on the app's own page
+- **Workflows:** Temporal, with a separate worker
+- **Monitoring:** OpenTelemetry, Prometheus, Grafana, Tempo, Loki
 
 ## Quick start
 
-Needs Go 1.25+, Node 22+, and Docker.
+Needs Go 1.26+, Node 22+, and Docker.
 
 ```sh
 gh repo create my-app --template 2SSK/go-next-boilerplate --private --clone
-cd my-app
-make setup   # .env, Go modules, npm install
-make dev     # Postgres, Keycloak, Temporal, migrations, API on :8080, worker, web on :3000
-```
-
-Open http://localhost:3000. The status pill on the landing page turns green once the API and
-database answer. The API serves its own docs at http://localhost:8080/docs.
-
-Then make it yours:
-
-```sh
-make rename NAME=my-app MODULE=github.com/you/my-app   # module path, app name, compose project
+cd my-app && git checkout platform
+make setup                                             # .env, Go modules, npm install
+make dev                                               # web :3000, API :8080, worker
+make mon-up                                            # optional: Grafana :3001
+make rename NAME=my-app MODULE=github.com/you/my-app   # make it yours
 make reset                                             # optional: remove the todo demo
 ```
 
+Sign in at http://localhost:3000 as `alice`/`alice`. The API documents itself at
+http://localhost:8080/docs.
+
 ## Commands
 
-Run `make` to list them all. The ones you'll use most:
+`make` lists them all.
 
-| Command                 | What it does                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------------- |
-| `make dev`              | Postgres, Keycloak, Temporal, migrations, API, worker, and web; Ctrl-C stops everything |
-| `make tp-up`            | Temporal dev server alone                                                               |
-| `make mon-up`           | Monitoring: Grafana :3001, Prometheus :9090, Temporal UI :8233 (`mon-down` stops it)    |
-| `make generate`         | Regenerate the Go server and TypeScript types from the spec                             |
-| `make db-migrate`       | Apply pending migrations                                                                |
-| `make db-status`        | List applied and pending migrations                                                     |
-| `make test`             | Go unit tests (race detector) and the `.env` round-trip test                            |
-| `make test-integration` | Go tests against the real database                                                      |
-| `make lint`             | gofmt, go vet, golangci-lint, ESLint, tsc, Prettier                                     |
-| `make check`            | lint + contract check + test + build, the gates CI runs                                 |
-| `make up` / `make down` | the whole stack in Docker, production builds                                            |
-| `make e2e`              | Playwright browser tests against the running stack (`make up` first)                    |
-| `make db-shell`         | psql into the dev database                                                              |
-| `make db-reset`         | wipe the dev database                                                                   |
-| `make reset`            | remove the todo demo (asks first; `YES=1` skips the prompt)                             |
+| Command                    | What it does                                                   |
+| -------------------------- | -------------------------------------------------------------- |
+| `make dev`                 | Postgres, Keycloak, Temporal, migrations, API, worker, and web |
+| `make mon-up` / `mon-down` | Grafana :3001, Prometheus :9090, Temporal UI :8233             |
+| `make generate`            | Regenerate Go and TypeScript code from the spec                |
+| `make db-migrate`          | Apply pending migrations                                       |
+| `make test`                | Go unit tests                                                  |
+| `make check`               | Lint, contract check, tests, build: what CI runs               |
+| `make up` / `make down`    | Whole stack in Docker, production builds                       |
+| `make e2e`                 | Browser tests against `make up`                                |
+| `make reset`               | Remove the todo demo                                           |
 
 ## Layout
 
 ```
-api/                  the contract: openapi.yaml, and the Go code generated from it
-cmd/api/              entry point: `api` serves HTTP, `api migrate` applies migrations
-cmd/worker/           runs Temporal workflows and activities
+api/              openapi.yaml and the Go code generated from it
+cmd/api/          `api` serves HTTP; `api migrate` applies migrations
+cmd/worker/       runs Temporal workflows and activities
 internal/
-  router/             mounts the generated routes, the docs, the JSON 404; middleware; http.Server
-  docs/               /openapi.yaml and the interactive /docs page, served by the API
-  handlers/           implement the API operations, one handler per area (system, todo)
-  models/             domain types and rules (Todo, NormalizeTitle, ErrNotFound)
-  store/              Postgres reads and writes, returning models
-  database/           pgx pool and the migrator (migrations/*.sql)
-  workflows/          Temporal workflows, and the Runner the API starts them with
-  activities/         the steps workflows run (database writes), retried by Temporal
-  temporal/           Temporal client setup, with tracing and metrics
-  telemetry/          OpenTelemetry setup: traces, logs export, /metrics server
-  config/             env vars → Config, with defaults and validation
-  middleware/         request ID, access log, panic recovery, body limit
-  httpx/              JSON responses outside the generated handlers
+  router/         routes, middleware, the http.Server
+  handlers/       one handler per area, implementing the generated interface
+  models/         domain types and rules
+  store/          Postgres queries
+  workflows/      Temporal workflows, and the runner the API starts them with
+  activities/     the work workflows do (database writes), retried by Temporal
+  auth/           access-token checks and roles
+  telemetry/      tracing, log export, /metrics
+  database/       connection pool, migrator, migrations/*.sql
+  config/         environment variables → Config
 web/
-  app/                pages (landing, todos) and globals.css (the design tokens)
-  components/         navbar, theme toggle, API status, ui/ (shadcn)
-  config/site.ts      app name, description, navbar style, and navigation
-  lib/api.ts          typed client for the browser; lib/api-server.ts for server components
-  lib/api/schema.ts   TypeScript types generated from the spec
-  e2e/                Playwright tests
-scripts/              with-env, reset, rename, and the .env test; run through make
-docs/                 ROADMAP.md and the architecture decision records (adr/)
+  app/            pages, sign-in, and the /api proxy that attaches the token
+  config/         site.ts: name, navigation, protected pages
+  lib/            typed API client, session, generated types
+deploy/           Keycloak realm, monitoring configs, Grafana dashboard
+docs/adr/         why things are the way they are
 ```
 
-## How the pieces connect
-
-**The contract comes first.** `api/openapi.yaml` describes every endpoint. `make generate`
-produces the Go server interface and types (`api/api.gen.go`) and the TypeScript types
-(`web/lib/api/schema.ts`). Handlers implement the generated interface, and the web app calls the
-API through a client typed by the same spec, so a change on one side that the other doesn't
-match fails to compile. CI fails if the committed generated code is out of date.
-
-**The browser only talks to Next.js for the app.** `next.config.ts` forwards `/api/*`, `/readyz`
-and `/livez` to `API_URL`, so there is no CORS to configure. Server components call the API
-directly.
-
-**The API documents itself.** It serves the contract at `/openapi.yaml` and an interactive
-reference at `/docs` (Scalar, loaded from a CDN, with its telemetry and hosted AI turned off).
-These are not proxied through Next.js, so they are reachable exactly where the API is: keep the
-API port internal in production and the docs stay internal too, or set `DOCS_ENABLED=false`.
-
-**Security headers.** Every API response carries `nosniff`, `DENY` framing, `no-referrer`, and a
-Content-Security-Policy that blocks everything (it's JSON); the docs page sets a strict policy
-of its own that allows only Scalar's script and its init script, by hash. Every web page gets a
-static Content-Security-Policy and the usual hardening headers from `next.config.ts`. The web
-policy allows inline scripts: the strict alternative, nonces, would force every page to render
-per request and discard the static shells. HTTPS and HSTS belong to whatever terminates TLS.
-
-**Errors have one shape:** `{"error": {"code": "not_found", "message": "..."}}`. Branch on `code`;
-`message` is safe to show people.
-
-**Health:** `/livez` says the process is up and never checks dependencies (for restarts).
-`/readyz` also pings the database and answers 503 when it can't (for load balancers).
-
-## Configuration
-
-Environment variables only. `make setup` copies `.env.example` to `.env`, where each one is
-explained. Make never parses `.env` itself; targets load it through `scripts/with-env.sh`, and
-Docker Compose reads it directly.
-
-**One rule:** wrap a value in single quotes if it contains spaces, `#`, `$`, or quotes, for
-example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same value, and
-`make test` proves it with exactly such a password. A variable already set in your shell wins
-over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
-
-| Variable                                              | Default                                                              | Used by          |
-| ----------------------------------------------------- | -------------------------------------------------------------------- | ---------------- |
-| `APP_ENV`                                             | `development` (text logs) or `production` (JSON)                     | API              |
-| `LOG_LEVEL`                                           | `info` in production, `debug` otherwise                              | API              |
-| `DOCS_ENABLED`                                        | `true`; `false` turns off `/docs` and `/openapi.yaml`                | API              |
-| `PORT`                                                | `8080`                                                               | API              |
-| `SHUTDOWN_TIMEOUT`                                    | `10s`, the drain time after SIGTERM                                  | API              |
-| `PGHOST`, `PGPORT`                                    | `localhost`, `5432` (also the host port in Compose)                  | API, Compose     |
-| `PGUSER`, `PGPASSWORD`, `PGDATABASE`                  | `app` / `app` / `app`                                                | API, Compose     |
-| `PGSSLMODE`                                           | `disable`                                                            | API              |
-| `DATABASE_URL`                                        | unset; when set, it wins over the `PG*` values                       | API              |
-| `KEYCLOAK_PORT`                                       | `8180`                                                               | Compose          |
-| `OIDC_ISSUER`, `OIDC_AUDIENCE`                        | `http://localhost:8180/realms/app`, `api`                            | API              |
-| `OIDC_DISCOVERY_URL`                                  | unset; Keycloak's internal address in Docker                         | API              |
-| `TEMPORAL_ADDRESS`                                    | `localhost:7233`                                                     | API, worker      |
-| `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`           | `default`, `app`                                                     | API, worker      |
-| `TEMPORAL_PORT`, `TEMPORAL_UI_PORT`                   | `7233`, `8233`                                                       | Compose          |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                         | unset (nothing exported); `http://localhost:4318` with `make mon-up` | API, worker, web |
-| `METRICS_PORT`, `WORKER_METRICS_PORT`                 | `9464`, `9465`; internal `/metrics` ports                            | API, worker      |
-| `GRAFANA_PORT`, `PROMETHEUS_PORT`                     | `3001`, `9090`                                                       | Compose          |
-| `APP_URL`                                             | `http://localhost:3000`, this app's public URL                       | Web              |
-| `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | the dev realm's values                                               | Web              |
-| `AUTH_SECRET`                                         | required in production: 32+ random characters                        | Web              |
-| `AUTH_INTERNAL_ISSUER`                                | unset; Keycloak's internal address in Docker                         | Web              |
-| `API_URL`                                             | `http://localhost:8080`                                              | Web              |
-| `WEB_PORT`                                            | `3000`                                                               | Web              |
-
-The database credentials are the standard libpq variables, written once: the API builds its
-connection from them (escaping any character correctly), Compose creates the database with them,
-and psql reads them as-is. If port 5432 is taken, change `PGPORT` and nothing else.
-
-## Authentication (platform)
-
-Users, passwords, and roles live in Keycloak (`make kc-up`, console at
-http://localhost:8180, `admin`/`admin`). Dev users: `alice`/`alice` (role `user`) and
-`admin`/`admin` (`user` and `admin`). New users get `user` automatically.
-
-- **Sign-in happens on the app's own page** (`/login`). The Next.js server exchanges the
-  username and password with Keycloak and keeps the tokens in an encrypted, `httpOnly`
-  cookie; browser JavaScript never sees a token. `proxy.ts` refreshes tokens before they
-  expire and sends signed-out visitors of protected pages to `/login`.
-- **The browser calls the API through `/api/*`**, a Next.js route that attaches the token
-  on the server and refuses cross-site writes. Server components use `serverApi()`.
-- **The API checks every token** (signature, issuer, expiry, and that it was issued for
-  this API) and enforces the roles each operation declares in the spec:
-  `security: [{ bearerAuth: [user] }]`. Missing or bad token: 401; missing role: 403.
-- **Todos are per user.** Another user's todo is a 404, so its existence isn't revealed.
-- **To protect a page**, add its path to `protectedPaths` in `web/config/site.ts`.
-
-The tradeoff of an in-app sign-in form (no Keycloak MFA, password reset, or social login)
-and how to switch back to Keycloak's own pages are in `docs/adr/0005`.
-
-## Workflows (platform)
-
-Todo writes run as Temporal workflows; reads go straight to Postgres.
+## How it works
 
 ```
-browser → web → API ──start workflow──▶ Temporal ◀──poll── worker ──activity──▶ Postgres
-                 └──── waits for the result (up to 10s) ◀──────────┘
+browser → Next.js → API ──start workflow──▶ Temporal ◀── worker ──▶ Postgres
+                     └── reads ─────────────────────────────────────▶ Postgres
 ```
 
-- **The API starts the workflow and waits**, so responses are the same as before (201, 404,
-  ...). If Temporal is down, or no worker finishes in time, writes answer **503** while reads
-  keep working.
-- **The worker** (`make dev-worker`, or the `worker` service in Docker) does the work. Failed
-  activities are retried with backoff, up to 5 attempts; a missing todo isn't retried.
-- **Retries are safe.** The workflow ID includes the user and the `X-Request-ID`, so the same
-  request sent twice is done once.
-- **See every write** in the Temporal UI at http://localhost:8233 (`make mon-up`): inputs,
-  attempts, errors.
+- **Spec first.** Change `api/openapi.yaml`, run `make generate`, and the build tells you what
+  to implement.
+- **Sign-in.** The Next.js server signs users in with Keycloak and keeps the tokens in an
+  encrypted cookie; the browser never sees a token. The API checks every token and the roles
+  each operation declares in the spec. Todos are per user.
+- **Writes run as Temporal workflows**, executed by the worker with retries. The API waits for
+  the result, so responses are unchanged. If Temporal is down, writes return 503 and reads keep
+  working. Sending the same `X-Request-ID` twice does the write once.
+- **One trace per request**, from the Next.js route through the API, Temporal, the worker, and
+  each SQL query. Every log line carries its `trace_id`.
+- **Errors** always look like `{"error": {"code": "not_found", "message": "..."}}`.
+- **Health:** `/livez` (process up) and `/readyz` (database reachable).
+- **Migrations** run as a deploy step (`make db-migrate`), never on server start.
 
-To run a new write through Temporal: add an activity method in `internal/activities`, a
-workflow in `internal/workflows`, a small runner like `TodoRunner`, and register both in
-`cmd/worker`. Details and tradeoffs are in `docs/adr/0006`.
+## Monitoring
 
-## Observability (platform)
+`make mon-up`, then open Grafana at http://localhost:3001:
 
-```sh
-make mon-up   # collector, Tempo, Loki, Prometheus, Grafana, Temporal UI
-```
+- **App overview** dashboard: request rate, errors, and latency per route; workflow and activity
+  rates and failures; database pool; Go runtime.
+- **Explore → Tempo:** traces. **Explore → Loki:** logs, filter with `| trace_id="..."`.
+  Traces, logs, and latency graphs link to each other.
+- **Temporal UI** at http://localhost:8233: every workflow with its inputs, attempts, and errors.
 
-`.env.example` already points the API, worker, and web app at it
-(`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`); if your `.env` is older, add that line and
-restart `make dev`. Docker's `make up` points at the collector by itself. Open Grafana at http://localhost:3001.
-
-- **Traces** (Tempo): one trace per browser action, from the Next.js route through the API,
-  Temporal, the worker's activity, and each SQL query. In Grafana: Explore → Tempo, or click an
-  exemplar dot on a latency graph.
-- **Logs** (Loki): every line from the API and worker, with `trace_id`; a line links to its
-  trace and a span links to its logs. Stdout still gets every line too.
-- **Metrics** (Prometheus): request rate, errors, and latency per route; workflow and activity
-  rates, failures, and latency; connection pool and query latency; Go runtime. The **App
-  overview** dashboard shows them; each process serves `/metrics` on an internal port (API
-  9464, worker 9465), never on the public one.
-
-Without `OTEL_EXPORTER_OTLP_ENDPOINT` nothing is exported, but log lines still carry a
-`trace_id`. To use a hosted backend instead, point that variable at it. Design and tradeoffs
-(sampling, what to change for production) are in `docs/adr/0007`.
-
-## Migrations
-
-Plain SQL files in `internal/database/migrations/`, applied in name order. Schema changes are a
-deploy step, never a side effect of starting the server:
-
-- `make db-migrate` (or `api migrate`) applies pending files, each in its own transaction, under
-  an advisory lock so concurrent runs can't collide.
-- The server checks the schema at startup and refuses to run if a migration is pending or an
-  applied file was edited (checksums are recorded).
-- In Docker, a one-shot `migrate` service runs before the API starts.
-- Migrations are forward-only: to undo a change, write a new migration. See
-  `docs/adr/0002-forward-only-migrations.md`.
+Metrics are served on internal ports (API 9464, worker 9465), never the public API port. To
+send traces and logs elsewhere, change `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 ## Adding a feature
 
-The todo demo is the template; each layer has one file for it. A new resource, say `notes`:
+Copy the todo demo, one file per layer. For `notes`:
 
-1. **Contract.** Add the paths and schemas to `api/openapi.yaml`, then `make generate`. The Go
-   build now fails until the new operations are implemented, which is the point.
-2. **Migration.** Add `internal/database/migrations/0003_notes.sql`, then `make db-migrate`.
-3. **Model.** `internal/models/note.go`: the domain type and its rules (like `NormalizeTitle`).
-4. **Store.** `internal/store/notes.go`: the Postgres reads and writes, returning models.
-5. **Handler.** `internal/handlers/notes.go`: a `NotesStore` interface and a `NotesHandler`
-   whose methods implement the generated operations. Tests call those methods directly with an
-   in-memory store, so they need no database.
-6. **Wire.** Embed `*NotesHandler` in `Handlers` (`internal/handlers/handlers.go`) and construct
-   it in `router.Routes`. If an operation is missing, the build says which.
-7. **Web.** Add `web/lib/notes.ts` (types from `lib/api/schema.ts`, calls through `api`), a page
-   in `web/app/notes/`, and a nav entry in `web/config/site.ts`. For more shadcn components, run
-   `npx shadcn@latest add <name>` in `web/`.
+1. Add the endpoints to `api/openapi.yaml` (with `security: [{ bearerAuth: [user] }]`), then
+   `make generate`.
+2. Add `internal/database/migrations/0004_notes.sql`, then `make db-migrate`.
+3. Add `models/note.go`, `store/notes.go`, and `handlers/notes.go`.
+4. For writes that should be retried and recorded: an activity in `activities/`, a workflow in
+   `workflows/`, and register both in `cmd/worker`.
+5. Wire the handler in `handlers/handlers.go` and `router/router.go`.
+6. Add `web/app/notes/`, a nav entry, and the path in `protectedPaths` (`web/config/site.ts`).
 
-## How reset works
+## Configuration
 
-The demo owns some files outright (`todo.go` in models, store and handlers, its migration,
-`web/app/todos/`, its e2e test, and so on) and adds a few lines of wiring to shared files, the spec included. Those lines
-are tagged with a comment: either on the same line, or between a begin and an end comment
-(`feature:todo:begin` and its matching `:end`). `scripts/reset.sh` deletes the owned files and
-the tagged lines, regenerates the Go and TypeScript code from the trimmed spec, then runs gofmt,
-`go mod tidy`, the build, and Prettier.
+Environment variables, documented in `.env.example` (`make setup` copies it to `.env`). The
+ones you'll touch most:
 
-After a reset you have `GET /`, `/livez`, `/readyz`, `/docs`, and the landing page. The `todos`
-table stays in your local database until `make db-reset`. CI runs a reset on every push and
-checks the result, so this path can't silently break.
+| Variable                             | Default                                       |
+| ------------------------------------ | --------------------------------------------- |
+| `APP_ENV`                            | `development` (text logs) or `production`     |
+| `PORT`, `WEB_PORT`                   | `8080`, `3000`                                |
+| `PGHOST`, `PGPORT`                   | `localhost`, `5432`                           |
+| `PGUSER`, `PGPASSWORD`, `PGDATABASE` | `app`                                         |
+| `OIDC_ISSUER`, `AUTH_ISSUER`         | the dev Keycloak realm                        |
+| `AUTH_SECRET`                        | required in production: 32+ random characters |
+| `TEMPORAL_ADDRESS`                   | `localhost:7233`                              |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`        | the local collector; empty exports nothing    |
 
-## Design
+Quote values with spaces, `#`, or `$` in single quotes. A variable set in your shell overrides
+`.env`.
 
-The web app follows one design language: minimal, one accent colour, soft raised surfaces, and
-three motion speeds on a single easing curve. Light mode is neutral paper with Tokyo Night Day
-accents; dark mode is Tokyo Night. Every token is a CSS variable in `web/app/globals.css`, and the
-shadcn components read the same variables, so changing a colour there restyles everything.
+## Reset
 
-The navbar comes in two styles, set by `navbar` in `web/config/site.ts`. `"bar"` (the default) is
-a full-width sticky bar for platform and infra tools. `"island"` is a floating capsule for
-products and landing pages. Page spacing follows the choice automatically.
-
-The full design system (tokens, type scale, motion, component rules) and the rendering and
-performance rules are in `web/AGENTS.md`.
+`make reset` deletes the files the todo demo owns and the lines it added to shared files
+(marked `feature:todo`), then regenerates code. Sign-in, the worker, and monitoring stay. CI
+checks this on every push.
 
 ## Deploying
 
-`make up` runs the production images locally; it is a production-like test environment, not a
-deployment (no TLS, no backups, one replica). The API image (`Dockerfile`) is a static binary on
-Alpine, runs as a non-root user, and has a health check on `/livez`. Run `api migrate` as a
-release step (a Kubernetes Job, a Compose one-shot, a platform release command) before starting
-new API versions. The web image (`web/Dockerfile`) is Next.js standalone output; `API_URL` is
-used both at build time (rewrites) and at runtime (server components), so set it in both.
+One image runs both the API and the worker (`Dockerfile`); the web app has its own
+(`web/Dockerfile`). Run `api migrate` before starting a new API version. `make up` runs
+everything locally to test production builds.
+
+The Compose setup is for development. In production you need a real Temporal cluster (or
+Temporal Cloud), Keycloak with its own database, HTTPS, and real secrets; the dev users and the
+dev client secret in `deploy/keycloak/realm-app.json` must go.
 
 ## License
 
