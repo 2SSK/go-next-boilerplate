@@ -39,8 +39,10 @@ In order; each step ends with something that runs and is tested.
        e2e sign-in tests (ADR 5).
 2. [x] Temporal: todo writes run as workflows on a separate `cmd/worker`, with retries,
        idempotent workflow IDs, a 503 when Temporal is down, and tests (ADR 6).
-3. Observability: OpenTelemetry traces across HTTP, Postgres, and Temporal (exporter off by
-   default), Prometheus metrics, Grafana behind a profile.
+3. [x] Observability: OpenTelemetry traces from Next.js through the API, Temporal, the
+       worker, and Postgres; logs with trace IDs to Loki; Prometheus metrics on internal
+       ports; Grafana, Tempo, Loki, Prometheus, and the Temporal UI in
+       `docker-compose.monitoring.yml` (ADR 7).
 4. Tag `platform/v1.0.0`.
 
 ## Later, only when a project needs it

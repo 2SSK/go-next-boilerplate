@@ -19,6 +19,7 @@ import (
 	"github.com/2SSK/go-next-boilerplate/internal/httpx"
 	"github.com/2SSK/go-next-boilerplate/internal/middleware"
 	"github.com/2SSK/go-next-boilerplate/internal/store" // feature:todo
+	"github.com/2SSK/go-next-boilerplate/internal/telemetry"
 	"github.com/2SSK/go-next-boilerplate/internal/workflows"
 )
 
@@ -65,7 +66,7 @@ func Routes(d Deps) http.Handler {
 		},
 	})
 
-	mux := http.NewServeMux()
+	mux := routeMux{http.NewServeMux()}
 	api.HandlerWithOptions(strict, api.StdHTTPServerOptions{
 		BaseRouter: mux,
 		// Runs inside each generated route, after it has recorded the
@@ -77,18 +78,33 @@ func Routes(d Deps) http.Handler {
 	if d.DocsEnabled {
 		docs.Register(mux)
 	}
-	// Anything unmatched gets a JSON 404 instead of the mux's plain text.
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	// Anything unmatched gets a JSON 404 instead of the mux's plain text. It
+	// bypasses routeMux: an unmatched path has no route to record.
+	mux.ServeMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.Error(w, http.StatusNotFound, api.ErrorErrorCodeNotFound, "not found")
 	})
 
-	return middleware.Chain(mux,
+	// Tracing wraps everything, so the access log and every handler see the
+	// request's span (and log its trace_id).
+	return telemetry.HTTPHandler(middleware.Chain(mux,
 		middleware.SecurityHeaders,
 		middleware.RequestID,
 		middleware.Logger(d.Log),
 		middleware.Recover(d.Log),
 		middleware.BodyLimit(maxBodyBytes),
-	)
+	), isProbe)
+}
+
+// routeMux records each route's pattern on the request's span and metrics.
+type routeMux struct{ *http.ServeMux }
+
+func (m routeMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.ServeMux.HandleFunc(pattern, telemetry.Route(h))
+}
+
+// isProbe keeps health checks out of traces and request metrics.
+func isProbe(r *http.Request) bool {
+	return r.URL.Path == "/livez" || r.URL.Path == "/readyz"
 }
 
 func docsPath(enabled bool) string {

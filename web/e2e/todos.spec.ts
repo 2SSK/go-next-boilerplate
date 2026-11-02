@@ -17,7 +17,7 @@ test("a todo makes the full round trip and survives a reload", async ({ page }) 
   await signIn(page, "alice", "/todos");
 
   await page.getByLabel("New todo").fill(title);
-  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toBeVisible();
 
@@ -43,7 +43,7 @@ test("each user sees only their own todos", async ({ page }) => {
   const title = `alice only ${Date.now()}`;
   await signIn(page, "alice", "/todos");
   await page.getByLabel("New todo").fill(title);
-  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("listitem").filter({ hasText: title })).toBeVisible();
   await signOut(page);
 

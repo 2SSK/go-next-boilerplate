@@ -9,7 +9,7 @@ COMPOSE ?= docker compose
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev dev-api dev-worker dev-web db-up kc-up tp-up db-migrate db-status db-down db-reset db-shell \
+.PHONY: help setup dev dev-api dev-worker dev-web db-up kc-up tp-up mon-up mon-down db-migrate db-status db-down db-reset db-shell \
         test test-integration cover lint fmt generate generate-check build up down e2e check reset rename clean
 
 ## help: list targets
@@ -50,9 +50,17 @@ db-up:
 kc-up:
 	$(COMPOSE) up -d --wait keycloak
 
-## tp-up: start Temporal (UI on http://localhost:8233) and wait until it is ready
+## tp-up: start the Temporal dev server and wait until it is ready (its UI comes with mon-up)
 tp-up:
 	$(COMPOSE) up -d --wait temporal
+
+## mon-up: start monitoring: Grafana :3001, Prometheus :9090, Temporal UI :8233, OTLP :4318
+mon-up:
+	$(COMPOSE) --profile monitoring up -d --wait
+
+## mon-down: stop monitoring (its data is kept)
+mon-down:
+	$(COMPOSE) --profile monitoring stop otel-collector tempo loki prometheus grafana temporal-ui
 
 ## db-migrate: apply pending migrations (the API never does this itself)
 db-migrate:
@@ -115,7 +123,7 @@ build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="-X main.version=$(VERSION)" -o bin/ ./cmd/api ./cmd/worker
 	cd web && npm run build
 
-## up: build and run the whole stack in Docker (web on :3000, API on :8080, Temporal UI on :8233)
+## up: build and run the whole stack in Docker (web on :3000, API on :8080); add mon-up for monitoring
 up:
 	$(COMPOSE) --profile full up -d --build --wait
 
@@ -125,7 +133,7 @@ e2e:
 
 ## down: stop the whole Docker stack
 down:
-	$(COMPOSE) --profile full down
+	$(COMPOSE) --profile full --profile monitoring down
 
 ## check: lint, contract, test, and build, as CI does
 check: lint generate-check test build

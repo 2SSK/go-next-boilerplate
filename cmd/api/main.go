@@ -18,12 +18,14 @@ import (
 	"runtime/debug"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/2SSK/go-next-boilerplate/internal/auth"
 	"github.com/2SSK/go-next-boilerplate/internal/config"
 	"github.com/2SSK/go-next-boilerplate/internal/database"
 	"github.com/2SSK/go-next-boilerplate/internal/logger"
 	"github.com/2SSK/go-next-boilerplate/internal/router"
+	"github.com/2SSK/go-next-boilerplate/internal/telemetry"
 	"github.com/2SSK/go-next-boilerplate/internal/temporal"
 	"github.com/2SSK/go-next-boilerplate/internal/workflows"
 )
@@ -44,14 +46,7 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	log := logger.New(logger.Options{
-		Env:     cfg.Env,
-		Level:   cfg.LogLevel,
-		Service: router.AppName,
-		Version: buildVersion(),
-	}, os.Stdout)
-	// Also routes the standard library's log package through this logger.
-	slog.SetDefault(log)
+	log := newLogger(cfg, nil)
 
 	// ctx is cancelled on SIGINT/SIGTERM, which starts the graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -71,7 +66,42 @@ func run(args []string) error {
 	}
 }
 
+// newLogger builds the process logger and makes it the default, which also
+// routes the standard library's log package through it.
+func newLogger(cfg config.Config, export slog.Handler) *slog.Logger {
+	log := logger.New(logger.Options{
+		Env:     cfg.Env,
+		Level:   cfg.LogLevel,
+		Service: "api",
+		Version: buildVersion(),
+		Export:  export,
+	}, os.Stdout)
+	slog.SetDefault(log)
+	return log
+}
+
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	tel, err := telemetry.Setup(ctx, telemetry.Options{
+		Namespace:    router.AppName,
+		Service:      "api",
+		Version:      buildVersion(),
+		Env:          cfg.Env,
+		OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// Flush buffered spans and logs; the context is already cancelled.
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tel.Shutdown(sctx); err != nil {
+			log.Warn("telemetry shutdown", "error", err)
+		}
+	}()
+	// From here on, log lines are also exported (when an endpoint is set).
+	log = newLogger(cfg, tel.LogHandler())
+
 	db, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -105,10 +135,16 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Workflows: workflows.NewRunner(tc, cfg.Temporal.TaskQueue, 0),
 	}))
 
-	errCh := make(chan error, 1)
+	metrics := tel.MetricsServer(cfg.Telemetry.MetricsPort)
+
+	errCh := make(chan error, 2)
 	go func() {
 		log.Info("listening", "addr", srv.Addr)
 		errCh <- srv.ListenAndServe()
+	}()
+	go func() {
+		log.Info("metrics listening", "addr", metrics.Addr)
+		errCh <- fmt.Errorf("metrics: %w", metrics.ListenAndServe())
 	}()
 
 	select {
@@ -124,6 +160,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
+	_ = metrics.Close()
 	log.Info("shutdown complete")
 	return nil
 }

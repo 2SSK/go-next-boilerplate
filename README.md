@@ -42,7 +42,8 @@ Run `make` to list them all. The ones you'll use most:
 | Command                 | What it does                                                                            |
 | ----------------------- | --------------------------------------------------------------------------------------- |
 | `make dev`              | Postgres, Keycloak, Temporal, migrations, API, worker, and web; Ctrl-C stops everything |
-| `make tp-up`            | Temporal dev server alone (UI at http://localhost:8233)                                 |
+| `make tp-up`            | Temporal dev server alone                                                               |
+| `make mon-up`           | Monitoring: Grafana :3001, Prometheus :9090, Temporal UI :8233 (`mon-down` stops it)    |
 | `make generate`         | Regenerate the Go server and TypeScript types from the spec                             |
 | `make db-migrate`       | Apply pending migrations                                                                |
 | `make db-status`        | List applied and pending migrations                                                     |
@@ -71,7 +72,8 @@ internal/
   database/           pgx pool and the migrator (migrations/*.sql)
   workflows/          Temporal workflows, and the Runner the API starts them with
   activities/         the steps workflows run (database writes), retried by Temporal
-  temporal/           Temporal client setup
+  temporal/           Temporal client setup, with tracing and metrics
+  telemetry/          OpenTelemetry setup: traces, logs export, /metrics server
   config/             env vars → Config, with defaults and validation
   middleware/         request ID, access log, panic recovery, body limit
   httpx/              JSON responses outside the generated handlers
@@ -127,29 +129,32 @@ example `PGPASSWORD='p@ss $word #1'`. Both readers then see exactly the same val
 `make test` proves it with exactly such a password. A variable already set in your shell wins
 over `.env` for both readers, so `PGPORT=55432 make dev` works as expected.
 
-| Variable                                              | Default                                               | Used by      |
-| ----------------------------------------------------- | ----------------------------------------------------- | ------------ |
-| `APP_ENV`                                             | `development` (text logs) or `production` (JSON)      | API          |
-| `LOG_LEVEL`                                           | `info` in production, `debug` otherwise               | API          |
-| `DOCS_ENABLED`                                        | `true`; `false` turns off `/docs` and `/openapi.yaml` | API          |
-| `PORT`                                                | `8080`                                                | API          |
-| `SHUTDOWN_TIMEOUT`                                    | `10s`, the drain time after SIGTERM                   | API          |
-| `PGHOST`, `PGPORT`                                    | `localhost`, `5432` (also the host port in Compose)   | API, Compose |
-| `PGUSER`, `PGPASSWORD`, `PGDATABASE`                  | `app` / `app` / `app`                                 | API, Compose |
-| `PGSSLMODE`                                           | `disable`                                             | API          |
-| `DATABASE_URL`                                        | unset; when set, it wins over the `PG*` values        | API          |
-| `KEYCLOAK_PORT`                                       | `8180`                                                | Compose      |
-| `OIDC_ISSUER`, `OIDC_AUDIENCE`                        | `http://localhost:8180/realms/app`, `api`             | API          |
-| `OIDC_DISCOVERY_URL`                                  | unset; Keycloak's internal address in Docker          | API          |
-| `TEMPORAL_ADDRESS`                                    | `localhost:7233`                                      | API, worker  |
-| `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`           | `default`, `app`                                      | API, worker  |
-| `TEMPORAL_PORT`, `TEMPORAL_UI_PORT`                   | `7233`, `8233`                                        | Compose      |
-| `APP_URL`                                             | `http://localhost:3000`, this app's public URL        | Web          |
-| `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | the dev realm's values                                | Web          |
-| `AUTH_SECRET`                                         | required in production: 32+ random characters         | Web          |
-| `AUTH_INTERNAL_ISSUER`                                | unset; Keycloak's internal address in Docker          | Web          |
-| `API_URL`                                             | `http://localhost:8080`                               | Web          |
-| `WEB_PORT`                                            | `3000`                                                | Web          |
+| Variable                                              | Default                                                              | Used by          |
+| ----------------------------------------------------- | -------------------------------------------------------------------- | ---------------- |
+| `APP_ENV`                                             | `development` (text logs) or `production` (JSON)                     | API              |
+| `LOG_LEVEL`                                           | `info` in production, `debug` otherwise                              | API              |
+| `DOCS_ENABLED`                                        | `true`; `false` turns off `/docs` and `/openapi.yaml`                | API              |
+| `PORT`                                                | `8080`                                                               | API              |
+| `SHUTDOWN_TIMEOUT`                                    | `10s`, the drain time after SIGTERM                                  | API              |
+| `PGHOST`, `PGPORT`                                    | `localhost`, `5432` (also the host port in Compose)                  | API, Compose     |
+| `PGUSER`, `PGPASSWORD`, `PGDATABASE`                  | `app` / `app` / `app`                                                | API, Compose     |
+| `PGSSLMODE`                                           | `disable`                                                            | API              |
+| `DATABASE_URL`                                        | unset; when set, it wins over the `PG*` values                       | API              |
+| `KEYCLOAK_PORT`                                       | `8180`                                                               | Compose          |
+| `OIDC_ISSUER`, `OIDC_AUDIENCE`                        | `http://localhost:8180/realms/app`, `api`                            | API              |
+| `OIDC_DISCOVERY_URL`                                  | unset; Keycloak's internal address in Docker                         | API              |
+| `TEMPORAL_ADDRESS`                                    | `localhost:7233`                                                     | API, worker      |
+| `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`           | `default`, `app`                                                     | API, worker      |
+| `TEMPORAL_PORT`, `TEMPORAL_UI_PORT`                   | `7233`, `8233`                                                       | Compose          |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                         | unset (nothing exported); `http://localhost:4318` with `make mon-up` | API, worker, web |
+| `METRICS_PORT`, `WORKER_METRICS_PORT`                 | `9464`, `9465`; internal `/metrics` ports                            | API, worker      |
+| `GRAFANA_PORT`, `PROMETHEUS_PORT`                     | `3001`, `9090`                                                       | Compose          |
+| `APP_URL`                                             | `http://localhost:3000`, this app's public URL                       | Web              |
+| `AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | the dev realm's values                                               | Web              |
+| `AUTH_SECRET`                                         | required in production: 32+ random characters                        | Web              |
+| `AUTH_INTERNAL_ISSUER`                                | unset; Keycloak's internal address in Docker                         | Web              |
+| `API_URL`                                             | `http://localhost:8080`                                              | Web              |
+| `WEB_PORT`                                            | `3000`                                                               | Web              |
 
 The database credentials are the standard libpq variables, written once: the API builds its
 connection from them (escaping any character correctly), Compose creates the database with them,
@@ -192,11 +197,36 @@ browser → web → API ──start workflow──▶ Temporal ◀──poll─�
   activities are retried with backoff, up to 5 attempts; a missing todo isn't retried.
 - **Retries are safe.** The workflow ID includes the user and the `X-Request-ID`, so the same
   request sent twice is done once.
-- **See every write** in the Temporal UI at http://localhost:8233: inputs, attempts, errors.
+- **See every write** in the Temporal UI at http://localhost:8233 (`make mon-up`): inputs,
+  attempts, errors.
 
 To run a new write through Temporal: add an activity method in `internal/activities`, a
 workflow in `internal/workflows`, a small runner like `TodoRunner`, and register both in
 `cmd/worker`. Details and tradeoffs are in `docs/adr/0006`.
+
+## Observability (platform)
+
+```sh
+make mon-up   # collector, Tempo, Loki, Prometheus, Grafana, Temporal UI
+```
+
+`.env.example` already points the API, worker, and web app at it
+(`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`); if your `.env` is older, add that line and
+restart `make dev`. Docker's `make up` points at the collector by itself. Open Grafana at http://localhost:3001.
+
+- **Traces** (Tempo): one trace per browser action, from the Next.js route through the API,
+  Temporal, the worker's activity, and each SQL query. In Grafana: Explore → Tempo, or click an
+  exemplar dot on a latency graph.
+- **Logs** (Loki): every line from the API and worker, with `trace_id`; a line links to its
+  trace and a span links to its logs. Stdout still gets every line too.
+- **Metrics** (Prometheus): request rate, errors, and latency per route; workflow and activity
+  rates, failures, and latency; connection pool and query latency; Go runtime. The **App
+  overview** dashboard shows them; each process serves `/metrics` on an internal port (API
+  9464, worker 9465), never on the public one.
+
+Without `OTEL_EXPORTER_OTLP_ENDPOINT` nothing is exported, but log lines still carry a
+`trace_id`. To use a hosted backend instead, point that variable at it. Design and tradeoffs
+(sampling, what to change for production) are in `docs/adr/0007`.
 
 ## Migrations
 

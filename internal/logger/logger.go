@@ -3,9 +3,10 @@
 // Production writes one JSON object per line (for log collectors); everything
 // else writes readable text. Every line carries service, version, and env.
 // Lines logged with a request context (log.InfoContext(ctx, ...)) also carry
-// that request's ID, so one request can be followed across every package.
-// Attributes that look like secrets are redacted, and error lines record where
-// they were logged.
+// that request's ID and its trace_id, so one request can be followed across
+// every package and service, and from a log line to its trace. Attributes
+// that look like secrets are redacted before a record goes anywhere, and error
+// lines record where they were logged.
 package logger
 
 import (
@@ -15,6 +16,8 @@ import (
 	"log/slog"
 	"runtime"
 	"strings"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Options configure New.
@@ -25,11 +28,14 @@ type Options struct {
 	Level   slog.Level
 	Service string
 	Version string
+	// Export, when set, also receives every record at Level or above, after
+	// redaction: the OpenTelemetry log pipeline (telemetry.LogHandler).
+	Export slog.Handler
 }
 
 // New returns the logger described by o, writing to w.
 func New(o Options, w io.Writer) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: o.Level, ReplaceAttr: redact}
+	opts := &slog.HandlerOptions{Level: o.Level}
 
 	var h slog.Handler
 	if o.Env == "production" {
@@ -37,8 +43,11 @@ func New(o Options, w io.Writer) *slog.Logger {
 	} else {
 		h = slog.NewTextHandler(w, opts)
 	}
+	if o.Export != nil {
+		h = slog.NewMultiHandler(h, leveled{o.Export, o.Level})
+	}
 
-	return slog.New(contextHandler{h}).With(
+	return slog.New(contextHandler{redactHandler{h}}).With(
 		slog.String("service", o.Service),
 		slog.String("version", o.Version),
 		slog.String("env", o.Env),
@@ -84,6 +93,9 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if id := RequestID(ctx); id != "" {
 		r.AddAttrs(slog.String("request_id", id))
 	}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		r.AddAttrs(slog.String("trace_id", sc.TraceID().String()), slog.String("span_id", sc.SpanID().String()))
+	}
 	// Only errors pay for the source lookup; info lines stay cheap.
 	if r.Level >= slog.LevelError && r.PC != 0 {
 		f, _ := runtime.CallersFrames([]uintptr{r.PC}).Next()
@@ -114,13 +126,66 @@ func trimPath(file string) string {
 // it, case-insensitively: "password", "db_password", "Authorization", ...
 var secretWords = []string{"password", "passwd", "secret", "token", "authorization", "cookie", "api_key", "apikey"}
 
-// redact replaces the value of any sensitive attribute, at any group depth.
-func redact(_ []string, a slog.Attr) slog.Attr {
+// redactHandler replaces the value of any sensitive attribute, at any group
+// depth, before the record reaches any destination.
+type redactHandler struct {
+	slog.Handler
+}
+
+func (h redactHandler) Handle(ctx context.Context, r slog.Record) error {
+	clean := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		clean.AddAttrs(redact(a))
+		return true
+	})
+	return h.Handler.Handle(ctx, clean)
+}
+
+func (h redactHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	clean := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		clean[i] = redact(a)
+	}
+	return redactHandler{h.Handler.WithAttrs(clean)}
+}
+
+func (h redactHandler) WithGroup(name string) slog.Handler {
+	return redactHandler{h.Handler.WithGroup(name)}
+}
+
+func redact(a slog.Attr) slog.Attr {
 	key := strings.ToLower(a.Key)
 	for _, w := range secretWords {
 		if strings.Contains(key, w) {
 			return slog.String(a.Key, "[REDACTED]")
 		}
 	}
+	if a.Value.Kind() == slog.KindGroup {
+		group := a.Value.Group()
+		clean := make([]slog.Attr, len(group))
+		for i, g := range group {
+			clean[i] = redact(g)
+		}
+		return slog.Attr{Key: a.Key, Value: slog.GroupValue(clean...)}
+	}
 	return a
+}
+
+// leveled drops records below level, for a destination that has no level of
+// its own.
+type leveled struct {
+	slog.Handler
+	level slog.Level
+}
+
+func (h leveled) Enabled(ctx context.Context, l slog.Level) bool {
+	return l >= h.level && h.Handler.Enabled(ctx, l)
+}
+
+func (h leveled) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return leveled{h.Handler.WithAttrs(attrs), h.level}
+}
+
+func (h leveled) WithGroup(name string) slog.Handler {
+	return leveled{h.Handler.WithGroup(name), h.level}
 }

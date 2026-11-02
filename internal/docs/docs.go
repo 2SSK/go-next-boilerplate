@@ -16,7 +16,9 @@ import (
 const Path = "/docs"
 
 // Register mounts GET /openapi.yaml and GET /docs on mux.
-func Register(mux *http.ServeMux) {
+func Register(mux interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}) {
 	mux.HandleFunc("GET /openapi.yaml", serveSpec)
 	mux.HandleFunc("GET "+Path, servePage)
 }

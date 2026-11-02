@@ -30,6 +30,8 @@ type Config struct {
 	OIDC OIDC
 	// Temporal is where workflows run (see internal/temporal).
 	Temporal Temporal
+	// Telemetry says where traces, logs, and metrics go.
+	Telemetry Telemetry
 	// ShutdownTimeout bounds how long in-flight requests may drain on SIGTERM.
 	ShutdownTimeout time.Duration
 }
@@ -39,6 +41,18 @@ type Temporal struct {
 	Address   string // TEMPORAL_ADDRESS, host:port of the frontend
 	Namespace string // TEMPORAL_NAMESPACE
 	TaskQueue string // TEMPORAL_TASK_QUEUE, shared by the API and the worker
+}
+
+// Telemetry configures internal/telemetry.
+type Telemetry struct {
+	// OTLPEndpoint is the OpenTelemetry collector (OTEL_EXPORTER_OTLP_ENDPOINT,
+	// e.g. http://localhost:4318). Empty: traces and logs aren't exported.
+	OTLPEndpoint string
+	// MetricsPort serves the API's /metrics (METRICS_PORT).
+	MetricsPort int
+	// WorkerMetricsPort serves the worker's /metrics and /livez
+	// (WORKER_METRICS_PORT); separate so both run side by side in development.
+	WorkerMetricsPort int
 }
 
 // OIDC configures access-token verification.
@@ -94,6 +108,12 @@ func Load() (Config, error) {
 	}
 	cfg.OIDC = oidc
 
+	tel, err := loadTelemetry()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Telemetry = tel
+
 	timeout, err := getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return Config{}, err
@@ -108,6 +128,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func loadTelemetry() (Telemetry, error) {
+	t := Telemetry{OTLPEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")}
+	var err error
+	if t.MetricsPort, err = getEnvInt("METRICS_PORT", 9464); err != nil {
+		return Telemetry{}, err
+	}
+	if t.WorkerMetricsPort, err = getEnvInt("WORKER_METRICS_PORT", 9465); err != nil {
+		return Telemetry{}, err
+	}
+	return t, nil
 }
 
 func getEnvInt(key string, fallback int) (int, error) {

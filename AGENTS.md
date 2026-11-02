@@ -93,6 +93,11 @@ Run everything through the Makefile; `make` lists the targets.
   request bodies or credentials; keys containing password, secret, token, authorization,
   cookie, or api_key are redacted anyway, but don't rely on that. `debug` is for detail you'd
   only want while investigating; `LOG_LEVEL` turns it on without a rebuild.
+- **Telemetry.** Spans come from the instrumentation (HTTP, pgx, Temporal); add your own only
+  around work that isn't already a request, query, or activity
+  (`otel.Tracer("...").Start(ctx, ...)`), and always from the request's `ctx`. New metrics use
+  the global OTel meter (`otel.Meter`), with low-cardinality attributes only: never user IDs,
+  todo IDs, or raw paths. Metrics are served on the internal metrics port, never the API port.
 - **Auth.** Which operations need which role lives in the spec
   (`security: [{ bearerAuth: [role] }]`); `internal/auth` enforces it from the generated
   `api.BearerAuthScopes`. Handlers never read the `Authorization` header: they call

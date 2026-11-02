@@ -3,6 +3,11 @@
 # deployment (no TLS, no backups, one replica, secrets from .env).
 name: go-next-boilerplate
 
+# Prometheus, Grafana, Tempo, Loki, the collector, and the Temporal UI, all in
+# the `monitoring` profile: `make mon-up`.
+include:
+  - docker-compose.monitoring.yml
+
 services:
   db:
     image: postgres:17-alpine
@@ -56,10 +61,11 @@ services:
   # UI at http://localhost:8233. Production uses Temporal Cloud or a real cluster.
   temporal:
     image: temporalio/temporal:1.9.1
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--ui-port", "8233"]
+    # The dev server: one process, in-memory, nothing kept across restarts.
+    # Its UI is off; the standalone Temporal UI is in the monitoring profile.
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--headless", "--metrics-port", "7235"]
     ports:
       - "127.0.0.1:${TEMPORAL_PORT:-7233}:7233"
-      - "127.0.0.1:${TEMPORAL_UI_PORT:-8233}:8233"
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
       interval: 10s
@@ -95,6 +101,7 @@ services:
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/app
       OIDC_DISCOVERY_URL: http://keycloak:8080/realms/app
       TEMPORAL_ADDRESS: temporal:7233
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports:
       - "${PORT:-8080}:8080"
     # Probe every second while starting, then every 10s; the image's own
@@ -122,11 +129,11 @@ services:
       <<: *db-env
       APP_ENV: production
       TEMPORAL_ADDRESS: temporal:7233
-    # No HTTP port, so the image's /livez probe doesn't apply. Healthy means the
-    # worker process (PID 1) is running; it exits if it loses Temporal for good,
-    # and `up --wait` needs every service to have a healthcheck.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    # The worker's only HTTP port is its internal metrics one, which also
+    # serves /livez.
     healthcheck:
-      test: ["CMD-SHELL", "kill -0 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9465/livez"]
       interval: 10s
       timeout: 3s
       start_period: 10s
@@ -152,6 +159,7 @@ services:
       AUTH_CLIENT_SECRET: ${AUTH_CLIENT_SECRET:-dev-web-secret}
       # Dev value for the local production-like stack; set your own anywhere real.
       AUTH_SECRET: ${AUTH_SECRET:-local-compose-secret-0123456789abcdef0123}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports:
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
