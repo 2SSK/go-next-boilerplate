@@ -17,7 +17,7 @@ Its "Rendering and performance" rules are not optional: shared chrome (navbar, f
 in layouts, never pages; client components stay small leaves; page data loads on the server
 and streams behind `<Suspense>`.
 
-Decisions with their reasoning are in `docs/adr/`; the plan is `docs/ROADMAP.md`. This is the
+Decisions with their reasoning are in `docs/adr/`. This is the
 core variant (`main`); the `platform` branch extends it and nothing here may depend on it.
 
 ## Commands
