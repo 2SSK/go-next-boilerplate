@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 
@@ -57,7 +58,7 @@ func newEnv(t *testing.T, s *flakyStore) *testsuite.TestWorkflowEnvironment {
 	t.Helper()
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterActivity(activities.NewTodos(s))
+	env.RegisterActivity(activities.NewTodos(s, slog.New(slog.DiscardHandler)))
 	return env
 }
 

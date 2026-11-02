@@ -79,7 +79,7 @@ func run() error {
 	w.RegisterWorkflow(workflows.CreateTodo)
 	w.RegisterWorkflow(workflows.UpdateTodo)
 	w.RegisterWorkflow(workflows.DeleteTodo)
-	w.RegisterActivity(activities.NewTodos(store.NewTodos(db)))
+	w.RegisterActivity(activities.NewTodos(store.NewTodos(db), log))
 	registered++
 	// feature:todo:end
 
